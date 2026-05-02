@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SPY Analista</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          gray: {
+            950: '#0a0a0f',
+          }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { background: #000; }
+  .backdrop-blur { backdrop-filter: blur(12px); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .animate-pulse-slow { animation: pulse 2s ease-in-out infinite; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+  .fade-in { animation: fadeIn .25s ease; }
+  #tsList::-webkit-scrollbar { width: 3px; }
+  #tsList::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
+  #feed::-webkit-scrollbar { width: 4px; }
+  #feed::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
+</style>
+</head>
+<body class="min-h-screen text-white" style="background: linear-gradient(135deg, #000000 0%, #050508 50%, #0a0a12 100%);">
+
+<!-- APP -->
+<div id="app" class="flex flex-col min-h-screen">
+
+  <!-- HEADER -->
+  <header class="flex items-center gap-4 px-6 py-3 border-b border-gray-900" style="background:rgba(0,0,0,.7);backdrop-filter:blur(12px);">
+    <div>
+      <h1 class="text-xl font-black tracking-tight">SPY <span class="text-gray-600 font-normal text-base">Analista</span></h1>
+    </div>
+    <div class="flex items-center gap-2 ml-2">
+      <span id="hdrPrice" class="text-2xl font-bold">—</span>
+      <span id="hdrChg" class="text-sm text-gray-400">—</span>
+      <span id="sessionPill" class="text-xs font-bold px-2 py-0.5 rounded-full border border-gray-700 text-gray-500">—</span>
+    </div>
+    <div class="ml-auto flex items-center gap-4">
+      <span id="tsIndicator" class="text-xs font-bold text-gray-600">● 0 prints</span>
+      <span id="modePill" class="text-xs font-bold px-2 py-1 rounded bg-gray-900 border border-gray-800 text-gray-500">SIM</span>
+      <div id="dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse-slow"></div>
+      <span id="clock" class="text-xs text-gray-600 tabular-nums">—</span>
+    </div>
+  </header>
+
+  <!-- BANNERS -->
+  <div id="offlineBanner" class="hidden items-center justify-center gap-2 px-6 py-2 text-xs text-red-500 border-b border-red-900/40" style="background:#0f0505;">
+    Sin servidor — ejecuta <strong class="mx-1">python server_5.py</strong> — Mostrando simulación.
+  </div>
+
+  <!-- MAIN GRID -->
+  <main class="flex-1 grid p-5 gap-5" style="grid-template-columns: 220px 1fr 260px; grid-template-rows: auto 1fr auto;">
+
+    <!-- NIVELES (col 1, rows 1-2) -->
+    <div class="row-span-2 rounded-2xl p-4 border border-gray-800/60 flex flex-col" style="background:rgba(15,15,20,.7);">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Niveles Clave</h2>
+        <span id="levelCount" class="text-xs text-gray-700">—</span>
+      </div>
+      <div id="levelsList" class="flex-1 overflow-y-auto flex flex-col gap-1"></div>
+      <button onclick="simulateHit()" class="mt-3 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-800 hover:border-gray-600 hover:text-gray-400 transition-colors">↯ Simular zona</button>
+    </div>
+
+    <!-- PRESIÓN (col 2, row 1) -->
+    <div class="rounded-2xl p-5 border border-gray-800/60" style="background:rgba(15,15,20,.7);">
+      <div class="flex items-end gap-4 mb-4">
+        <div class="flex-1">
+          <p id="pressureLabel" class="text-3xl font-black tracking-tight text-yellow-500 leading-none mb-3">Esperando flujo...</p>
+          <div class="w-full h-3 rounded-full overflow-hidden bg-gray-800">
+            <div class="h-full flex">
+              <div id="barBuy"  class="h-full bg-green-500 transition-all duration-500" style="width:50%"></div>
+              <div id="barSell" class="h-full bg-red-500   transition-all duration-500" style="width:50%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-5 pb-1">
+          <div>
+            <p class="text-xs font-bold text-gray-600 uppercase tracking-widest mb-1">Compradores</p>
+            <p id="statBuy" class="text-xl font-bold text-green-400">0</p>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-gray-600 uppercase tracking-widest mb-1">Vendedores</p>
+            <p id="statSell" class="text-xl font-bold text-red-400">0</p>
+          </div>
+        </div>
+      </div>
+      <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
+
+      <!-- BLOCK CARD -->
+      <div id="blockCard" class="rounded-xl border border-gray-800 p-4 flex items-center gap-4" style="background:rgba(10,10,14,.6);">
+        <div class="flex-1 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <div id="bcZoneDot" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></div>
+            <span class="text-xs font-bold text-gray-600 uppercase w-9 flex-shrink-0">Zona</span>
+            <span id="bcZone" class="text-xs font-semibold text-gray-400">Esperando bloque...</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div id="bcFlowDot" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></div>
+            <span class="text-xs font-bold text-gray-600 uppercase w-9 flex-shrink-0">Flow</span>
+            <span id="bcFlow" class="text-xs font-semibold text-gray-400">—</span>
+          </div>
+          <p id="bcConf" class="text-xs text-gray-600 tracking-wide">Confianza: —%</p>
+        </div>
+        <div id="bcSignal" class="text-2xl font-black px-4 py-3 rounded-xl text-gray-600" style="background:rgba(20,20,20,.8);">—</div>
+      </div>
+    </div>
+
+    <!-- TIME & SALES (col 3, rows 1-2) -->
+    <div class="row-span-2 rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-900">
+        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Time &amp; Sales</h2>
+        <span id="tsTotalLabel" class="text-xs text-gray-700">0 prints</span>
+      </div>
+      <div id="tsList" class="flex-1 overflow-y-auto font-mono text-xs"></div>
+    </div>
+
+    <!-- ANÁLISIS (col 2, row 2) -->
+    <div class="rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
+      <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-900">
+        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Análisis de Zonas</h2>
+        <span id="alertBadge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full bg-green-500 text-black">0</span>
+        <button onclick="clearFeed()" class="ml-auto text-xs px-3 py-1 border border-gray-800 rounded text-gray-600 hover:border-gray-600 hover:text-gray-400 transition-colors">Limpiar</button>
+      </div>
+      <div id="feed" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-gray-700 py-12">
+          <div class="text-4xl opacity-30">◎</div>
+          <p class="text-sm leading-relaxed">Monitoreando precio...<br/>Cuando llegue a una zona clave, Claude analiza el flujo.</p>
+          <p class="text-xs text-gray-600">PREV HIGH · PREV LOW · PM HIGH · PM LOW · OI CALL · OI PUT</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const API = "https://TU-APP.up.railway.app";  // ← reemplaza con tu URL de Railway
+const TZONE = 0.20;
+
+// ── STATE ──
+let price=529.14, prevPrice=529.14, prevClose=527.90;
+let LEVELS=[], flow={buy_vol:0,sell_vol:0,delta:0,big_trades:0};
+let serverOk=false;
+const COOLDOWN_MS = 60*1000;
+let levelCooldowns={}, alertCount=0, tsIndex=0;
+
+// ── CLOCK ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const m = now.getHours()*60 + now.getMinutes();
+  const el = document.getElementById('sessionPill');
+  if      (m>=240&&m<570)  { el.className='text-xs font-bold px-2 py-0.5 rounded-full border border-yellow-900/50 text-yellow-500'; el.textContent='PRE-MARKET'; }
+  else if (m>=570&&m<960)  { el.className='text-xs font-bold px-2 py-0.5 rounded-full border border-green-900/50 text-green-500';  el.textContent='ABIERTO'; }
+  else if (m>=960&&m<1200) { el.className='text-xs font-bold px-2 py-0.5 rounded-full border border-yellow-900/50 text-yellow-500'; el.textContent='AFTER HOURS'; }
+  else                     { el.className='text-xs font-bold px-2 py-0.5 rounded-full border border-gray-800 text-gray-600';        el.textContent='CERRADO'; }
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── FETCH LEVELS ──
+async function fetchLevels() {
+  try {
+    const r = await fetch(`${API}/levels`, { signal: AbortSignal.timeout(3000) });
+    const d = await r.json();
+    if (d.levels?.length) { LEVELS = d.levels; renderLevels(); }
+  } catch {
+    if (!LEVELS.length) {
+      LEVELS = [
+        {id:'pdh', tag:'PREV HIGH',type:'ph',  price:531.40,desc:'High día anterior',oi:null},
+        {id:'pdl', tag:'PREV LOW', type:'pl',  price:525.80,desc:'Low día anterior', oi:null},
+        {id:'pmh', tag:'PM HIGH',  type:'pmh', price:529.90,desc:'High premarket',   oi:null},
+        {id:'pml', tag:'PM LOW',   type:'pml', price:527.30,desc:'Low premarket',    oi:null},
+        {id:'oi530',tag:'CALL 530',type:'oic', price:530.00,desc:'ITM Call OI: 284K',oi:284000},
+        {id:'oi528',tag:'PUT 528', type:'oip', price:528.00,desc:'ITM Put OI: 198K', oi:198000},
+      ];
+      renderLevels();
+    }
+  }
+}
+
+// ── FETCH QUOTE ──
+async function fetchQuote() {
+  try {
+    const r = await fetch(`${API}/quote`, { signal: AbortSignal.timeout(2000) });
+    const d = await r.json();
+    prevPrice=price; price=d.price||price; prevClose=d.prev_close||prevClose;
+    updatePriceUI(d);
+    if (!serverOk) setOnline(true, d.mode||'live');
+    return true;
+  } catch { if (serverOk) setOnline(false); return false; }
+}
+
+function updatePriceUI(d) {
+  const chg  = d.change   || (price-prevClose);
+  const chgP = d.change_pct || (chg/prevClose*100);
+  document.getElementById('hdrPrice').textContent = '$' + price.toFixed(2);
+  const el = document.getElementById('hdrChg');
+  el.textContent = (chg>=0?'+':'')+chg.toFixed(2)+' ('+(chgP>=0?'+':'')+chgP.toFixed(2)+'%)';
+  el.className = chg>=0 ? 'text-sm text-green-400' : 'text-sm text-red-400';
+}
+
+// ── FETCH FLOW ──
+async function fetchFlow() {
+  try {
+    const r = await fetch(`${API}/flow`, { signal: AbortSignal.timeout(1000) });
+    flow = await r.json();
+    updatePressureUI(flow);
+  } catch {}
+}
+
+function updatePressureUI(f) {
+  const buy=f.buy_vol||0, sell=f.sell_vol||0, total=buy+sell;
+  const blockBuy=f.block_buy_vol||0, blockSell=f.block_sell_vol||0, blockTotal=blockBuy+blockSell;
+  const buyPct=total>0?Math.round(buy/total*100):50, sellPct=100-buyPct;
+  document.getElementById('barBuy').style.width  = buyPct+'%';
+  document.getElementById('barSell').style.width = sellPct+'%';
+  document.getElementById('statBuy').textContent  = buy.toLocaleString();
+  document.getElementById('statSell').textContent = sell.toLocaleString();
+
+  const label=document.getElementById('pressureLabel');
+  const blockAlert=document.getElementById('blockAlert');
+
+  if (blockTotal>0 && blockBuy/blockTotal>=0.60) {
+    label.textContent='INSTITUCIONES COMPRANDO'; label.className='text-3xl font-black tracking-tight text-green-400 leading-none mb-3';
+    blockAlert.textContent='🔷 '+(f.last_block||'Bloque comprador detectado');
+    blockAlert.className='text-xs font-semibold px-3 py-2 rounded-lg mb-3 bg-green-950 text-green-400 border border-green-900/50';
+    blockAlert.classList.remove('hidden');
+    updateBlockCard('bull', blockBuy, blockTotal);
+  } else if (blockTotal>0 && blockSell/blockTotal>=0.60) {
+    label.textContent='INSTITUCIONES VENDIENDO'; label.className='text-3xl font-black tracking-tight text-red-400 leading-none mb-3';
+    blockAlert.textContent='🔶 '+(f.last_block||'Bloque vendedor detectado');
+    blockAlert.className='text-xs font-semibold px-3 py-2 rounded-lg mb-3 bg-red-950 text-red-400 border border-red-900/50';
+    blockAlert.classList.remove('hidden');
+    updateBlockCard('bear', blockSell, blockTotal);
+  } else if (total>0) {
+    if      (buyPct>=52)  { label.textContent=`COMPRADORES DOMINAN ${buyPct}%`;  label.className='text-3xl font-black tracking-tight text-green-400 leading-none mb-3'; }
+    else if (sellPct>=52) { label.textContent=`VENDEDORES DOMINAN ${sellPct}%`;  label.className='text-3xl font-black tracking-tight text-red-400 leading-none mb-3'; }
+    else                  { label.textContent='FLUJO EQUILIBRADO';               label.className='text-3xl font-black tracking-tight text-yellow-500 leading-none mb-3'; }
+    blockAlert.classList.add('hidden');
+  } else {
+    label.textContent='Esperando flujo...'; label.className='text-3xl font-black tracking-tight text-yellow-500 leading-none mb-3';
+  }
+}
+
+// ── BLOCK CARD ──
+function updateBlockCard(direction, blockVol, totalBlockVol) {
+  let zoneName='—', zoneColor='#4b5563';
+  if (LEVELS.length) {
+    const nearest=[...LEVELS].sort((a,b)=>Math.abs(price-a.price)-Math.abs(price-b.price))[0];
+    zoneName=nearest.tag;
+    zoneColor=nearest.type.startsWith('oic')||nearest.type==='ph'||nearest.type==='pmh' ? '#22c55e' : '#ef4444';
+  }
+  const isBull=direction==='bull';
+  const conf=totalBlockVol>0?Math.round(blockVol/totalBlockVol*100):60;
+  document.getElementById('bcZone').textContent  = zoneName;
+  document.getElementById('bcZoneDot').style.background = zoneColor;
+  document.getElementById('bcFlow').textContent  = isBull?'BULLISH':'BEARISH';
+  document.getElementById('bcFlowDot').style.background = isBull?'#22c55e':'#ef4444';
+  document.getElementById('bcConf').textContent  = `Confianza: ${conf}%`;
+  const sig=document.getElementById('bcSignal');
+  sig.textContent=isBull?'▲ BUY':'▼ SELL';
+  sig.style.background=isBull?'rgba(5,30,15,.9)':'rgba(30,5,5,.9)';
+  sig.style.color=isBull?'#22c55e':'#ef4444';
+}
+
+// ── FETCH T&S ──
+const TS_DISPLAY=80; let tsBuffer=[];
+async function fetchTS() {
+  try {
+    const r=await fetch(`${API}/ts/since/${tsIndex}`,{signal:AbortSignal.timeout(2000)});
+    const d=await r.json();
+    if (d.prints?.length) {
+      tsBuffer.push(...d.prints);
+      if (tsBuffer.length>500) tsBuffer=tsBuffer.slice(-500);
+      tsIndex=d.total;
+      renderTS(d.prints);
+    }
+    updateTSIndicator(d.total??tsIndex);
+  } catch {}
+}
+
+function renderTS(newPrints) {
+  const list=document.getElementById('tsList');
+  if (!list) return;
+  const atBottom=list.scrollTop+list.clientHeight>=list.scrollHeight-10;
+  newPrints.forEach(p => {
+    const isBig=p.big||p.institutional;
+    const isBuy=p.direction==='BUY';
+    const row=document.createElement('div');
+    row.className='flex items-center gap-2 px-4 py-1.5 border-b border-gray-900/50 text-xs '+(isBuy?'text-green-400':'text-red-400')+(isBig?' font-bold':'');
+    if (isBig) row.style.background=isBuy?'rgba(0,30,20,.5)':'rgba(30,0,10,.5)';
+    row.innerHTML=`<span class="text-gray-600 w-16 flex-shrink-0">${p.time}</span>`+
+      `<span class="w-5 flex-shrink-0">${isBuy?'▲':'▼'}</span>`+
+      `<span class="w-16 text-right flex-shrink-0">${p.size.toLocaleString()}</span>`+
+      `<span class="w-14 text-right flex-shrink-0">$${p.price.toFixed(2)}</span>`+
+      (p.note?`<span class="text-yellow-500 text-xs">${p.note}</span>`:'');
+    list.appendChild(row);
+  });
+  while (list.children.length>TS_DISPLAY) list.removeChild(list.firstChild);
+  if (atBottom) list.scrollTop=list.scrollHeight;
+  document.getElementById('tsTotalLabel').textContent=`${tsIndex.toLocaleString()} prints`;
+}
+
+function updateTSIndicator(total) {
+  const el=document.getElementById('tsIndicator');
+  if (el) { el.textContent=`● ${total.toLocaleString()} prints`; el.style.color='#22c55e'; }
+}
+
+// ── SERVER STATUS ──
+function setOnline(ok, mode) {
+  serverOk=ok;
+  const off=document.getElementById('offlineBanner');
+  const pill=document.getElementById('modePill');
+  if (ok) {
+    off.classList.add('hidden'); off.classList.remove('flex');
+    if (mode==='live') { pill.className='text-xs font-bold px-2 py-1 rounded bg-green-950 border border-green-900/50 text-green-400'; pill.textContent='● LIVE'; }
+    else               { pill.className='text-xs font-bold px-2 py-1 rounded bg-yellow-950 border border-yellow-900/50 text-yellow-400'; pill.textContent='SIM'; }
+  } else {
+    off.classList.remove('hidden'); off.classList.add('flex');
+    pill.className='text-xs font-bold px-2 py-1 rounded bg-red-950 border border-red-900/50 text-red-500'; pill.textContent='OFFLINE';
+    startSim();
+  }
+}
+
+// ── SIM ──
+let simOn=false;
+function startSim() {
+  if (simOn) return; simOn=true;
+  setInterval(()=>{
+    price=Math.max(523,Math.min(537,price+(Math.random()-.502)*.05));
+    const chg=price-prevClose;
+    document.getElementById('hdrPrice').textContent='$'+price.toFixed(2);
+    const el=document.getElementById('hdrChg');
+    el.textContent=(chg>=0?'+':'')+chg.toFixed(2)+' ('+(chg>=0?'+':'')+(chg/prevClose*100).toFixed(2)+'%)';
+    el.className=chg>=0?'text-sm text-green-400':'text-sm text-red-400';
+    const buy=(flow.buy_vol||0)+(Math.random()>.5?Math.floor(Math.random()*200):0);
+    const sell=(flow.sell_vol||0)+(Math.random()>.5?Math.floor(Math.random()*200):0);
+    flow={buy_vol:buy,sell_vol:sell,delta:buy-sell,big_trades:flow.big_trades||0,block_buy_vol:0,block_sell_vol:0,last_block:''};
+    updatePressureUI(flow); renderLevels(); checkZones();
+  },2000);
+}
+
+// ── LEVELS RENDER ──
+function renderLevels() {
+  const sorted=[...LEVELS].sort((a,b)=>b.price-a.price);
+  const html=sorted.map(l=>{
+    const diff=price-l.price, abs=Math.abs(diff);
+    const isZone=abs<=TZONE, isNear=abs<=TZONE*5;
+    const dotColor=l.type==='ph'||l.type==='oic'?'#22c55e':l.type==='pl'||l.type==='oip'?'#ef4444':l.type==='pmh'?'#f59e0b':'#f97316';
+    const bg=isZone?'background:rgba(245,158,11,.06);border-left:2px solid #f59e0b;':isNear?'background:rgba(245,158,11,.03);':'';
+    return `<div class="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-default hover:bg-white/5 transition-colors" style="${bg}">
+      <div class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dotColor}"></div>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-bold text-gray-500 uppercase tracking-wide"
+           onclick="editLevelClass('${l.id}','${l.tag.replace(/'/g,"\\'")}',this)" style="cursor:pointer">${l.tag}</p>
+        <p class="text-base font-bold text-gray-200 leading-tight"
+           onclick="editLevelPrice('${l.id}',${l.price},this)" style="cursor:pointer">$${l.price.toFixed(2)}</p>
+      </div>
+      ${isZone?'<span class="text-xs font-bold text-yellow-500 animate-pulse">ZONA</span>':''}
+    </div>`;
+  }).join('');
+  document.getElementById('levelsList').innerHTML=html;
+  document.getElementById('levelCount').textContent=LEVELS.length+' niveles';
+}
+
+function editLevelClass(id,tag,el) {
+  event.stopPropagation();
+  const v=prompt(`Editar clase de "${tag}":`,tag); if(!v||!v.trim()) return;
+  const l=LEVELS.find(x=>x.id===id); if(l){l.tag=v.trim();renderLevels();}
+  fetch(`${API}/levels/set_class`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,class:v.trim()})}).catch(()=>{});
+}
+function editLevelPrice(id,cur,el) {
+  event.stopPropagation();
+  const v=prompt('Editar precio:',cur.toFixed(2)); if(!v) return;
+  const p=parseFloat(v.trim()); if(isNaN(p)||p<=0) return;
+  const l=LEVELS.find(x=>x.id===id); if(l){l.price=p;renderLevels();}
+  fetch(`${API}/levels/set_price`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,price:p})}).catch(()=>{});
+}
+
+// ── ZONE CHECK ──
+function checkZones() {
+  const now=Date.now();
+  for (const l of LEVELS) {
+    if (Math.abs(price-l.price)<=TZONE) {
+      const last=levelCooldowns[l.id]||0;
+      if (now-last<COOLDOWN_MS) continue;
+      levelCooldowns[l.id]=now; fireAlert(l); break;
+    }
+  }
+}
+
+function simulateHit() {
+  if (!LEVELS.length) return;
+  const l=LEVELS[Math.floor(Math.random()*LEVELS.length)];
+  price=l.price+(Math.random()-.5)*.06; renderLevels(); fireAlert(l);
+}
+
+// ── ALERT CARD ──
+async function fireAlert(lvl) {
+  document.getElementById('emptyState')?.remove();
+  alertCount++;
+  const badge=document.getElementById('alertBadge');
+  badge.classList.remove('hidden'); badge.textContent=alertCount;
+
+  let snap={...flow};
+  try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
+
+  const now=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const card=document.createElement('div');
+  card.className='rounded-xl border border-gray-800 overflow-hidden fade-in';
+  card.style.background='rgba(10,10,14,.8)';
+  card.innerHTML=`
+    <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-800/50">
+      <span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-800 text-gray-500">Analizando...</span>
+      <span class="text-sm font-semibold text-gray-300 flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
+      <span class="text-xs text-gray-600">${now}</span>
+    </div>
+    <div class="px-4 py-3 flex items-center gap-2 text-xs text-gray-600">
+      Analizando con Claude
+      <span class="flex gap-1 ml-1">
+        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:0s"></i>
+        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:.2s"></i>
+        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:.4s"></i>
+      </span>
+    </div>`;
+  document.getElementById('feed').prepend(card);
+
+  let zoneTrades=[];
+  try { const r=await fetch(`${API}/ts/recent/60`,{signal:AbortSignal.timeout(2000)}); const d=await r.json(); zoneTrades=d.prints||[]; tsIndex=d.total; } catch {}
+  try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
+
+  try {
+    const res=await fetch(`${API}/analyze`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lvl_tag:lvl.tag,lvl_type:lvl.type,lvl_price:lvl.price,lvl_desc:lvl.desc,spy_price:price,buy_vol:snap.buy_vol||0,sell_vol:snap.sell_vol||0,mode:serverOk?'live':'sim',trades:zoneTrades})
+    });
+    const data=await res.json();
+    const text=data.content?.map(b=>b.text||'').join('')||'';
+    const get=(k,n)=>(text.match(new RegExp(k+':\\s*([\\s\\S]*?)(?='+(n||'ZZZZ')+':|$)','i'))||[])[1]?.trim()||'';
+    const decisionRaw=get('DECISION','LECTURA').toUpperCase();
+    const decision=decisionRaw.includes('COMPRA')&&!decisionRaw.includes('NO')?'COMPRA':decisionRaw.includes('VENTA')?'VENTA':'NO TRADE';
+    fillCard(card,lvl,decision,get('LECTURA','ANALISIS'),get('ANALISIS',null),snap,now,zoneTrades.length);
+  } catch(e) { fillCard(card,lvl,'NO TRADE','Error: '+(e.message||'').slice(0,40),'',snap,now,0); }
+
+  while (document.getElementById('feed').children.length>20) document.getElementById('feed').removeChild(document.getElementById('feed').lastChild);
+}
+
+function fmt(t) {
+  return (t||'').replace(/compras agresivas/gi,'<span class="text-green-400 font-semibold">$&</span>').replace(/ventas agresivas/gi,'<span class="text-red-400 font-semibold">$&</span>').replace(/sin convicción/gi,'<span class="text-yellow-500 font-semibold">$&</span>');
+}
+
+function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount) {
+  const isBuy=decision==='COMPRA', isSell=decision==='VENTA';
+  const accent=isBuy?'#22c55e':isSell?'#ef4444':'#f59e0b';
+  const bg=isBuy?'rgba(5,25,12,.9)':isSell?'rgba(25,5,5,.9)':'rgba(15,12,0,.9)';
+  const borderColor=isBuy?'rgba(34,197,94,.25)':isSell?'rgba(239,68,68,.25)':'rgba(245,158,11,.25)';
+  const pillBg=isBuy?'rgba(5,40,20,.8)':isSell?'rgba(40,5,5,.8)':'rgba(30,20,0,.8)';
+  const pillTxt=isBuy?'▲ Compra':isSell?'▼ Venta':'↔ Sin confirmación';
+  const icon=isBuy?'▲':isSell?'▼':'—';
+  const buy=snap.buy_vol||0, sell=snap.sell_vol||0, tc=tradeCount!=null?tradeCount:'—';
+  card.style.background=bg; card.style.borderColor=borderColor;
+  card.innerHTML=`
+    <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color:${borderColor}">
+      <span class="text-xs font-bold px-2 py-1 rounded-full" style="background:${pillBg};color:${accent}">${pillTxt}</span>
+      <span class="text-sm font-semibold text-gray-300 flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
+      <span class="text-xs text-gray-600">${time}</span>
+    </div>
+    <div class="px-4 py-4">
+      <div class="flex items-center gap-3 rounded-xl p-3 mb-3" style="background:rgba(0,0,0,.4);border:1px solid ${borderColor}">
+        <span class="text-3xl font-black" style="color:${accent}">${icon} ${decision}</span>
+        ${lectura?`<span class="text-xs text-gray-400 leading-relaxed flex-1">${fmt(lectura)}</span>`:''}
+      </div>
+      ${analisis?`<p class="text-xs text-gray-500 leading-relaxed mb-3">${fmt(analisis)}</p>`:''}
+      <div class="flex gap-2 flex-wrap">
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Compradores <span class="text-green-400 font-semibold ml-1">${buy.toLocaleString()}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Vendedores <span class="text-red-400 font-semibold ml-1">${sell.toLocaleString()}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">SPY <span class="text-gray-300 font-semibold ml-1">$${price.toFixed(2)}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Trades <span class="text-yellow-500 font-semibold ml-1">${tc}</span></span>
+      </div>
+    </div>`;
+}
+
+function clearFeed() {
+  document.getElementById('feed').innerHTML=`<div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-gray-700 py-12"><div class="text-4xl opacity-30">◎</div><p class="text-sm">Monitor limpiado — esperando zonas.</p></div>`;
+  alertCount=0; document.getElementById('alertBadge').classList.add('hidden');
+}
+
+// ── POLL ──
+async function poll() {
+  const ok=await fetchQuote(); if(ok) await fetchFlow(); renderLevels(); checkZones();
+}
+fetchLevels(); setInterval(fetchLevels,30000);
+poll(); setInterval(poll,2000);
+setInterval(fetchTS,500);
+</script>
+</body>
+</html>
