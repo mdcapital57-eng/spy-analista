@@ -1,7 +1,15 @@
 {
   "version": 2,
-  "outputDirectory": "static",
+  "builds": [
+    {
+      "src": "static/spy_simple.html",
+      "use": "@vercel/static"
+    }
+  ],
   "routes": [
-    { "src": "/(.*)", "dest": "/spy_simple.html" }
+    {
+      "src": "/(.*)",
+      "dest": "/static/spy_simple.html"
+    }
   ]
 }
