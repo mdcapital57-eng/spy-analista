@@ -69,11 +69,11 @@
 
   <!-- MOBILE TABS -->
   <nav id="mobileTabBar" class="border-b border-gray-900" style="background:rgba(0,0,0,.9);">
-    <div class="flex">
-      <button onclick="setTab('flujo')"    id="tab-flujo"    class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-r border-transparent border-r-gray-800 text-gray-500 transition-colors tracking-wide">Flujo</button>
-      <button onclick="setTab('niveles')"  id="tab-niveles"  class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-r border-transparent border-r-gray-800 text-gray-500 transition-colors tracking-wide">Niveles</button>
-      <button onclick="setTab('analisis')" id="tab-analisis" class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-r border-transparent border-r-gray-800 text-gray-500 transition-colors tracking-wide">Análisis</button>
-      <button onclick="setTab('ts')"       id="tab-ts"       class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors tracking-wide">T&amp;S</button>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:6px;">
+      <button onclick="setTab('flujo')"    id="tab-flujo"    class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Flujo</button>
+      <button onclick="setTab('niveles')"  id="tab-niveles"  class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Niveles</button>
+      <button onclick="setTab('analisis')" id="tab-analisis" class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Análisis</button>
+      <button onclick="setTab('ts')"       id="tab-ts"       class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">T&amp;S</button>
     </div>
   </nav>
 
