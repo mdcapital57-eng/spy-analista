@@ -394,6 +394,8 @@ function editLevelPrice(id,cur,el) {
 
 // ── ZONE CHECK ──
 function checkZones() {
+  const m=new Date().getHours()*60+new Date().getMinutes();
+  if (m<570||m>=960) return; // solo durante mercado abierto (9:30–16:00 ET)
   const now=Date.now();
   for (const l of LEVELS) {
     if (Math.abs(price-l.price)<=TZONE) {
