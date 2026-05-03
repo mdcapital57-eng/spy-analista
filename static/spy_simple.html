@@ -84,10 +84,10 @@
           <path d="M 59 36 A 82 82 0 0 1 141 36" fill="none" stroke="#d97706" stroke-width="22"/>
           <!-- BUY zone (green, right) -->
           <path d="M 141 36 A 82 82 0 0 1 182 107" fill="none" stroke="#16a34a" stroke-width="22" stroke-linecap="round"/>
-          <!-- Zone labels centered on each arc segment -->
-          <text x="39" y="72" font-size="8" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">SELL</text>
-          <text x="100" y="37" font-size="8" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">NEUTRAL</text>
-          <text x="161" y="72" font-size="8" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">BUY</text>
+          <!-- Zone labels at arc centerline (r=82) midpoint of each 60° zone -->
+          <text x="29" y="66" font-size="8" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">SELL</text>
+          <text x="100" y="25" font-size="7.5" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">NEUTRAL</text>
+          <text x="171" y="66" font-size="8" fill="white" font-weight="900" text-anchor="middle" dominant-baseline="central" font-family="ui-sans-serif,sans-serif">BUY</text>
           <!-- Needle (pointing up = neutral, rotates around pivot) -->
           <g id="gaugeNeedle" style="transform-origin:100px 107px;transition:transform .7s cubic-bezier(.4,0,.2,1);">
             <polygon points="100,32 98.5,102 101.5,102" fill="#f1f5f9" opacity="0.95"/>
