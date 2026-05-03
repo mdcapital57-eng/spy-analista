@@ -74,21 +74,30 @@
 
     <!-- PRESIÓN (col 2, row 1) -->
     <div class="rounded-2xl p-5 border border-gray-800/60" style="background:rgba(15,15,20,.7);">
-      <div class="flex items-center gap-5 mb-4">
-        <!-- Termómetro vertical -->
-        <div class="flex flex-col items-center gap-1 flex-shrink-0">
-          <span class="font-black uppercase tracking-widest text-green-600" style="font-size:9px">BUY</span>
-          <div class="relative rounded-full bg-gray-900 border border-gray-800 overflow-hidden" style="width:22px;height:120px;">
-            <div id="thermoFill" class="absolute bottom-0 left-0 right-0 transition-all duration-700" style="height:50%;background:#f59e0b;border-radius:9999px 9999px 0 0;"></div>
-            <div class="absolute inset-x-0 border-t border-gray-600/50 pointer-events-none" style="top:50%"></div>
-          </div>
-          <div id="thermoBulb" class="rounded-full border-2 border-gray-800 transition-all duration-700 flex-shrink-0" style="width:30px;height:30px;background:#f59e0b;box-shadow:0 0 10px #f59e0b55;"></div>
-          <span class="font-black uppercase tracking-widest text-red-600" style="font-size:9px">SELL</span>
-        </div>
-        <!-- Label -->
-        <div class="flex-1">
-          <p id="pressureLabel" class="text-3xl font-black tracking-tight text-yellow-500 leading-none">Esperando flujo...</p>
-        </div>
+      <div class="flex flex-col items-center mb-3">
+        <svg viewBox="0 0 200 118" style="width:100%;max-width:270px;overflow:visible;">
+          <!-- Track background -->
+          <path d="M 18 107 A 82 82 0 0 1 182 107" fill="none" stroke="#0d0d12" stroke-width="28" stroke-linecap="round"/>
+          <!-- SELL zone (red, left) -->
+          <path d="M 18 107 A 82 82 0 0 1 59 36" fill="none" stroke="#dc2626" stroke-width="22" stroke-linecap="round"/>
+          <!-- NEUTRAL zone (amber, center) -->
+          <path d="M 59 36 A 82 82 0 0 1 141 36" fill="none" stroke="#d97706" stroke-width="22"/>
+          <!-- BUY zone (green, right) -->
+          <path d="M 141 36 A 82 82 0 0 1 182 107" fill="none" stroke="#16a34a" stroke-width="22" stroke-linecap="round"/>
+          <!-- Zone labels on arc -->
+          <text x="44" y="80" font-size="8" fill="white" font-weight="900" text-anchor="middle" font-family="ui-sans-serif,sans-serif" opacity="0.95">SELL</text>
+          <text x="100" y="38" font-size="8" fill="white" font-weight="900" text-anchor="middle" font-family="ui-sans-serif,sans-serif" opacity="0.95">NEUTRAL</text>
+          <text x="156" y="80" font-size="8" fill="white" font-weight="900" text-anchor="middle" font-family="ui-sans-serif,sans-serif" opacity="0.95">BUY</text>
+          <!-- Needle (pointing up = neutral, rotates around pivot) -->
+          <g id="gaugeNeedle" style="transform-origin:100px 107px;transition:transform .7s cubic-bezier(.4,0,.2,1);">
+            <polygon points="100,32 98.5,102 101.5,102" fill="#f1f5f9" opacity="0.95"/>
+            <line x1="100" y1="102" x2="100" y2="115" stroke="#6b7280" stroke-width="3" stroke-linecap="round"/>
+          </g>
+          <!-- Center pivot cap -->
+          <circle cx="100" cy="107" r="9" fill="#080810" stroke="#374151" stroke-width="2"/>
+          <circle cx="100" cy="107" r="4.5" fill="#9ca3af"/>
+        </svg>
+        <p id="pressureLabel" class="text-2xl font-black tracking-tight text-yellow-500 leading-none" style="margin-top:-6px">Esperando flujo...</p>
       </div>
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
 
@@ -219,17 +228,9 @@ function updatePressureUI(f) {
   const blockBuy=f.block_buy_vol||0, blockSell=f.block_sell_vol||0, blockTotal=blockBuy+blockSell;
   const buyPct=total>0?Math.round(buy/total*100):50, sellPct=100-buyPct;
 
-  // Termómetro
-  const fill=document.getElementById('thermoFill');
-  const bulb=document.getElementById('thermoBulb');
-  if (fill && bulb) {
-    const color = buyPct>55?'#22c55e' : buyPct<45?'#ef4444' : '#f59e0b';
-    const glow  = buyPct>55?'#22c55e55' : buyPct<45?'#ef444455' : '#f59e0b55';
-    fill.style.height     = buyPct+'%';
-    fill.style.background = color;
-    bulb.style.background = color;
-    bulb.style.boxShadow  = `0 0 10px ${glow}`;
-  }
+  // Gauge needle: -90deg=SELL | 0deg=NEUTRAL | +90deg=BUY
+  const needle=document.getElementById('gaugeNeedle');
+  if (needle) needle.style.transform=`rotate(${(buyPct-50)*1.8}deg)`;
 
   const label=document.getElementById('pressureLabel');
   const blockAlert=document.getElementById('blockAlert');
