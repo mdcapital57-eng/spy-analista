@@ -29,6 +29,13 @@
   #tsList::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
   #feed::-webkit-scrollbar { width: 4px; }
   #feed::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
+  /* Mobile mode */
+  body.mobile-mode #mainGrid { grid-template-columns:1fr!important; grid-template-rows:auto!important; padding:8px!important; gap:8px!important; }
+  body.mobile-mode .m-panel { display:none!important; }
+  body.mobile-mode .m-panel.m-active { display:flex!important; flex-direction:column; min-height:calc(100dvh - 116px); }
+  body.mobile-mode #mobileTabBar { display:flex!important; }
+  #mobileTabBar { display:none; }
+  .tab-btn.tab-active { border-color:#ffffff!important; color:#ffffff!important; }
 </style>
 </head>
 <body class="min-h-screen text-white" style="background: linear-gradient(135deg, #000000 0%, #050508 50%, #0a0a12 100%);">
@@ -51,6 +58,7 @@
       <span id="modePill" class="text-xs font-bold px-2 py-1 rounded bg-gray-900 border border-gray-800 text-gray-500">SIM</span>
       <div id="dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse-slow"></div>
       <span id="clock" class="text-xs text-gray-600 tabular-nums">—</span>
+      <button id="btnMobile" onclick="toggleMobile()" class="text-xs px-2 py-1 rounded border border-gray-800 text-gray-500 hover:border-gray-600 hover:text-gray-300 transition-colors">Móvil</button>
     </div>
   </header>
 
@@ -59,11 +67,21 @@
     Sin servidor — ejecuta <strong class="mx-1">python server_5.py</strong> — Mostrando simulación.
   </div>
 
+  <!-- MOBILE TABS -->
+  <nav id="mobileTabBar" class="border-b border-gray-900" style="background:rgba(0,0,0,.9);">
+    <div class="flex">
+      <button onclick="setTab('flujo')"    id="tab-flujo"    class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors">Flujo</button>
+      <button onclick="setTab('niveles')"  id="tab-niveles"  class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors">Niveles</button>
+      <button onclick="setTab('analisis')" id="tab-analisis" class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors">Análisis</button>
+      <button onclick="setTab('ts')"       id="tab-ts"       class="tab-btn flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors">T&amp;S</button>
+    </div>
+  </nav>
+
   <!-- MAIN GRID -->
-  <main class="flex-1 grid p-5 gap-5" style="grid-template-columns: 220px 1fr 260px; grid-template-rows: auto 1fr auto;">
+  <main id="mainGrid" class="flex-1 grid p-5 gap-5" style="grid-template-columns: 220px 1fr 260px; grid-template-rows: auto 1fr auto;">
 
     <!-- NIVELES (col 1, rows 1-2) -->
-    <div class="row-span-2 rounded-2xl p-4 border border-gray-800/60 flex flex-col" style="background:rgba(15,15,20,.7);">
+    <div id="panelNiveles" class="m-panel row-span-2 rounded-2xl p-4 border border-gray-800/60 flex flex-col" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Niveles Clave</h2>
         <span id="levelCount" class="text-xs text-gray-700">—</span>
@@ -73,7 +91,7 @@
     </div>
 
     <!-- PRESIÓN (col 2, row 1) -->
-    <div class="rounded-2xl p-5 border border-gray-800/60" style="background:rgba(15,15,20,.7);">
+    <div id="panelFlujo" class="m-panel rounded-2xl p-5 border border-gray-800/60 flex flex-col" style="background:rgba(15,15,20,.7);">
       <div class="flex flex-col items-center mb-3">
         <svg viewBox="0 0 200 118" style="width:100%;max-width:270px;overflow:visible;">
           <!-- Track background -->
@@ -121,7 +139,7 @@
     </div>
 
     <!-- TIME & SALES (col 3, rows 1-2) -->
-    <div class="row-span-2 rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
+    <div id="panelTS" class="m-panel row-span-2 rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-900">
         <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Time &amp; Sales</h2>
         <span id="tsTotalLabel" class="text-xs text-gray-700">0 prints</span>
@@ -130,7 +148,7 @@
     </div>
 
     <!-- ANÁLISIS (col 2, row 2) -->
-    <div class="rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
+    <div id="panelAnalisis" class="m-panel rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-900">
         <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Análisis de Zonas</h2>
         <span id="alertBadge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full bg-green-500 text-black">0</span>
@@ -528,6 +546,41 @@ async function poll() {
 fetchLevels(); setInterval(fetchLevels,30000);
 poll(); setInterval(poll,2000);
 setInterval(fetchTS,500);
+
+// ── MOBILE MODE ──
+let mobileMode=localStorage.getItem('mobileMode')==='1';
+let activeTab='flujo';
+function toggleMobile(){
+  mobileMode=!mobileMode;
+  localStorage.setItem('mobileMode',mobileMode?'1':'0');
+  applyMobileMode();
+}
+function applyMobileMode(){
+  const btn=document.getElementById('btnMobile');
+  if(mobileMode){
+    document.body.classList.add('mobile-mode');
+    btn.textContent='Desktop';
+    btn.style.color='#60a5fa';
+    btn.style.borderColor='#1e3a5f';
+    setTab(activeTab);
+  }else{
+    document.body.classList.remove('mobile-mode');
+    btn.textContent='Móvil';
+    btn.style.color='';
+    btn.style.borderColor='';
+    document.querySelectorAll('.m-panel').forEach(p=>p.classList.remove('m-active'));
+  }
+}
+function setTab(tab){
+  if(!mobileMode)return;
+  activeTab=tab;
+  const map={flujo:'panelFlujo',niveles:'panelNiveles',analisis:'panelAnalisis',ts:'panelTS'};
+  document.querySelectorAll('.m-panel').forEach(p=>p.classList.remove('m-active'));
+  document.getElementById(map[tab])?.classList.add('m-active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('tab-active'));
+  document.getElementById('tab-'+tab)?.classList.add('tab-active');
+}
+if(mobileMode)applyMobileMode();
 </script>
 </body>
 </html>
