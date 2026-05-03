@@ -448,19 +448,27 @@ async function fireAlert(lvl) {
     const data=await res.json();
     const text=data.content?.map(b=>b.text||'').join('')||'';
     const get=(k,n)=>(text.match(new RegExp(k+':\\s*([\\s\\S]*?)(?='+(n||'ZZZZ')+':|$)','i'))||[])[1]?.trim()||'';
-    const decisionRaw=get('DECISION','LECTURA').toUpperCase();
+    const decisionRaw=get('DECISION','PATRON').toUpperCase();
     const decision=decisionRaw.includes('COMPRA')&&!decisionRaw.includes('NO')?'COMPRA':decisionRaw.includes('VENTA')?'VENTA':'NO TRADE';
-    fillCard(card,lvl,decision,get('LECTURA','ANALISIS'),get('ANALISIS',null),snap,now,zoneTrades.length);
-  } catch(e) { fillCard(card,lvl,'NO TRADE','Error: '+(e.message||'').slice(0,40),'',snap,now,0); }
+    const patron=get('PATRON','LECTURA');
+    fillCard(card,lvl,decision,get('LECTURA','ANALISIS'),get('ANALISIS',null),snap,now,zoneTrades.length,patron);
+  } catch(e) { fillCard(card,lvl,'NO TRADE','Error: '+(e.message||'').slice(0,40),'',snap,now,0,''); }
 
   while (document.getElementById('feed').children.length>20) document.getElementById('feed').removeChild(document.getElementById('feed').lastChild);
 }
 
 function fmt(t) {
-  return (t||'').replace(/compras agresivas/gi,'<span class="text-green-400 font-semibold">$&</span>').replace(/ventas agresivas/gi,'<span class="text-red-400 font-semibold">$&</span>').replace(/sin convicción/gi,'<span class="text-yellow-500 font-semibold">$&</span>');
+  return (t||'')
+    .replace(/compras agresivas/gi,'<span class="text-green-400 font-semibold">$&</span>')
+    .replace(/ventas agresivas/gi,'<span class="text-red-400 font-semibold">$&</span>')
+    .replace(/sin convicción/gi,'<span class="text-yellow-500 font-semibold">$&</span>')
+    .replace(/absorci[oó]n/gi,'<span class="text-purple-400 font-semibold">$&</span>')
+    .replace(/agotamiento/gi,'<span class="text-orange-400 font-semibold">$&</span>')
+    .replace(/aceleraci[oó]n/gi,'<span class="text-cyan-400 font-semibold">$&</span>')
+    .replace(/\b(compras absorbidas|ventas absorbidas)\b/gi,'<span class="text-purple-400 font-semibold">$&</span>');
 }
 
-function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount) {
+function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron) {
   const isBuy=decision==='COMPRA', isSell=decision==='VENTA';
   const accent=isBuy?'#22c55e':isSell?'#ef4444':'#f59e0b';
   const bg=isBuy?'rgba(5,25,12,.9)':isSell?'rgba(25,5,5,.9)':'rgba(15,12,0,.9)';
@@ -469,6 +477,16 @@ function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount) {
   const pillTxt=isBuy?'▲ Compra':isSell?'▼ Venta':'↔ Sin confirmación';
   const icon=isBuy?'▲':isSell?'▼':'—';
   const buy=snap.buy_vol||0, sell=snap.sell_vol||0, tc=tradeCount!=null?tradeCount:'—';
+
+  // Badge de patrón con color según tipo
+  let patronBadge='';
+  if (patron) {
+    const p=patron.toLowerCase();
+    const pColor=p.includes('absorci')?'#a855f7':p.includes('agotamiento')?'#f97316':p.includes('aceleraci')?'#06b6d4':'#6b7280';
+    const pBg=p.includes('absorci')?'rgba(88,28,135,.3)':p.includes('agotamiento')?'rgba(124,45,18,.3)':p.includes('aceleraci')?'rgba(8,51,68,.3)':'rgba(30,30,30,.4)';
+    patronBadge=`<span class="text-xs px-2 py-0.5 rounded-full border font-semibold" style="color:${pColor};background:${pBg};border-color:${pColor}40">◆ ${patron}</span>`;
+  }
+
   card.style.background=bg; card.style.borderColor=borderColor;
   card.innerHTML=`
     <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color:${borderColor}">
@@ -481,6 +499,7 @@ function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount) {
         <span class="text-3xl font-black" style="color:${accent}">${icon} ${decision}</span>
         ${lectura?`<span class="text-xs text-gray-400 leading-relaxed flex-1">${fmt(lectura)}</span>`:''}
       </div>
+      ${patronBadge?`<div class="mb-2">${patronBadge}</div>`:''}
       ${analisis?`<p class="text-xs text-gray-500 leading-relaxed mb-3">${fmt(analisis)}</p>`:''}
       <div class="flex gap-2 flex-wrap">
         <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Compradores <span class="text-green-400 font-semibold ml-1">${buy.toLocaleString()}</span></span>

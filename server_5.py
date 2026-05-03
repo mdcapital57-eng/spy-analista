@@ -333,6 +333,75 @@ def analyze():
     avg_size    = round(zone_total_vol / zone_total, 0) if zone_total > 0 else 0
     blocks      = sum(1 for t in trades if t.get("big"))
 
+    # --- Velocidad (trades/minuto en la zona) ---
+    velocity = 0.0
+    if len(trades) >= 2:
+        try:
+            def _hms(ts):
+                h, m, s = ts.split(":")
+                return int(h) * 3600 + int(m) * 60 + int(s)
+            dur = max(_hms(trades[-1]["time"]) - _hms(trades[0]["time"]), 1)
+            velocity = round(len(trades) / dur * 60, 1)
+        except Exception:
+            velocity = 0.0
+
+    # --- Absorción: bloques grandes que no mueven el precio en su dirección ---
+    buy_absorbed = 0
+    sell_absorbed = 0
+    for i in range(len(trades) - 1):
+        tc = trades[i]
+        tn = trades[i + 1]
+        if not tc.get("big"):
+            continue
+        dp = tn.get("price", tc.get("price", 0)) - tc.get("price", 0)
+        if tc["direction"] == "BUY"  and dp <= 0: buy_absorbed  += 1
+        if tc["direction"] == "SELL" and dp >= 0: sell_absorbed += 1
+
+    if buy_absorbed >= 2 and buy_absorbed > sell_absorbed:
+        absorption_text = (
+            f"compras absorbidas — {buy_absorbed} bloques BUY sin avance de precio "
+            f"(vendedores fuertes esperando arriba)"
+        )
+    elif sell_absorbed >= 2 and sell_absorbed > buy_absorbed:
+        absorption_text = (
+            f"ventas absorbidas — {sell_absorbed} bloques SELL sin caída de precio "
+            f"(compradores fuertes esperando abajo)"
+        )
+    else:
+        absorption_text = "ninguna significativa"
+
+    # --- Agotamiento: tamaño promedio cae en la dirección dominante ---
+    dominant_dir = "BUY" if zone_buy_pct >= 50 else "SELL"
+    dom_trades   = [t for t in trades if t.get("direction") == dominant_dir]
+    exhaustion_text = "ninguno"
+    if len(dom_trades) >= 4:
+        mid   = len(dom_trades) // 2
+        avg_f = sum(t.get("size", 0) for t in dom_trades[:mid])  / mid
+        avg_s = sum(t.get("size", 0) for t in dom_trades[mid:])  / max(len(dom_trades) - mid, 1)
+        drop  = round((1 - avg_s / avg_f) * 100) if avg_f > 0 else 0
+        if avg_s < avg_f * 0.65:
+            dir_label = "compradores" if dominant_dir == "BUY" else "vendedores"
+            exhaustion_text = (
+                f"{dir_label} perdiendo fuerza — tamaño cayó {drop}% "
+                f"(avg {round(avg_f)}→{round(avg_s)} acciones)"
+            )
+
+    # --- Aceleración: tamaño promedio sube en segunda mitad ---
+    acceleration_text = "ninguna"
+    if len(trades) >= 6:
+        mid  = len(trades) // 2
+        fh   = trades[:mid]
+        sh   = trades[mid:]
+        af   = sum(t.get("size", 0) for t in fh) / len(fh)
+        as_  = sum(t.get("size", 0) for t in sh) / len(sh)
+        if as_ > af * 1.4:
+            inc  = round((as_ / af - 1) * 100)
+            dlbl = "alcista" if zone_buy_pct >= 50 else "bajista"
+            acceleration_text = (
+                f"aceleración {dlbl} — tamaño promedio subió {inc}% "
+                f"en segunda mitad (avg {round(af)}→{round(as_)} acciones)"
+            )
+
     # Sin datos suficientes — no forzar análisis
     if zone_total < 5:
         return jsonify({
@@ -370,28 +439,40 @@ def analyze():
             },
             json={
                 "model":      "claude-haiku-4-5-20251001",
-                "max_tokens": 300,
+                "max_tokens": 350,
                 "system": (
-                    "Eres un analista de flujo para SPY. Buscas ventajas probabilísticas, no condiciones perfectas.\n\n"
-                    "REGLAS DE DECISIÓN (basadas en los trades de la zona, no en el flujo total de sesión):\n"
-                    "COMPRA si: volumen comprador en zona ≥ 60%, o prints agresivos en ask dominan, o bloques al alza.\n"
-                    "VENTA si: volumen vendedor en zona ≥ 60%, o prints agresivos en bid dominan, o bloques a la baja.\n"
-                    "NO TRADE si: diferencia menor al 15% entre compradores y vendedores, o volumen total bajo sin dirección.\n\n"
-                    "El flujo de sesión es contexto secundario. El flujo en la ZONA es lo que importa.\n"
-                    "El mercado rara vez es perfecto — una ventaja del 60/40 ya es suficiente para actuar.\n\n"
+                    "Eres un analista de microestructura para SPY. Identificas patrones de flujo en zonas clave.\n\n"
+                    "PATRONES A DETECTAR:\n"
+                    "• ABSORCIÓN: Bloques grandes que no mueven el precio en su dirección → fuerza opuesta presente.\n"
+                    "  Compras absorbidas = vendedores fuertes arriba (señal VENTA)\n"
+                    "  Ventas absorbidas = compradores fuertes abajo (señal COMPRA)\n"
+                    "• AGOTAMIENTO: Tamaño promedio cae >35% en prints de dirección dominante → momentum debilitándose.\n"
+                    "• ACELERACIÓN: Tamaño promedio sube >40% en segunda mitad → momentum creciendo.\n"
+                    "• FLUJO DOMINANTE: >60% del volumen de zona en una sola dirección.\n\n"
+                    "REGLAS DE DECISIÓN — requiere ≥2 condiciones alineadas:\n"
+                    "COMPRA si ≥2: (a) flujo BUY zona ≥55%, (b) ventas absorbidas, (c) aceleración alcista, (d) agotamiento vendedor\n"
+                    "VENTA si ≥2: (a) flujo SELL zona ≥55%, (b) compras absorbidas, (c) aceleración bajista, (d) agotamiento comprador\n"
+                    "NO TRADE si: <2 condiciones alineadas, señales contradictorias, velocidad <5 trades/min, o datos insuficientes\n\n"
                     "Responde SIEMPRE en este formato exacto (sin texto extra):\n"
                     "DECISION: COMPRA | VENTA | NO TRADE\n"
+                    "PATRON: [absorción | agotamiento | aceleración | flujo dominante | sin patrón claro]\n"
                     "LECTURA: [una frase directa, máximo 12 palabras]\n"
-                    "ANALISIS: [2-3 oraciones sobre lo que ves en los trades: tamaños, dirección dominante, agresión]"
+                    "ANALISIS: [2-3 oraciones: qué patrón detectaste, qué condiciones se alinearon, por qué la decisión]"
                 ),
                 "messages": [{
                     "role": "user",
                     "content": (
-                        f"Nivel tocado: {lvl_tag} ${lvl_price:.2f} — {lvl_desc}\n"
-                        f"SPY ahora: ${spy_price:.2f} | {'LIVE Alpaca IEX' if mode == 'live' else 'SIMULADO'}\n\n"
-                        f"FLUJO SESIÓN — Compradores: {buy_vol:,} ({buy_pct}%) | Vendedores: {sell_vol:,} ({sell_pct}%) | Delta: {delta_pct:+.1f}%\n\n"
-                        f"FLUJO EN ZONA — {zone_total} trades | BUY: {zone_buy_vol:,} ({zone_buy_pct}%) | SELL: {zone_sell_vol:,} ({100-zone_buy_pct:.1f}%) | "
-                        f"Tamaño promedio: {avg_size:.0f} | Bloques: {blocks}\n\n"
+                        f"Nivel: {lvl_tag} ${lvl_price:.2f} — {lvl_desc}\n"
+                        f"SPY: ${spy_price:.2f} | {'LIVE Alpaca IEX' if mode == 'live' else 'SIMULADO'}\n\n"
+                        f"FLUJO SESIÓN — BUY: {buy_pct}% ({buy_vol:,}) | SELL: {sell_pct}% ({sell_vol:,}) | Delta: {delta_pct:+.1f}%\n\n"
+                        f"FLUJO EN ZONA — {zone_total} trades a {velocity} trades/min\n"
+                        f"  BUY: {zone_buy_vol:,} ({zone_buy_pct}%) | SELL: {zone_sell_vol:,} ({100-zone_buy_pct:.1f}%)\n"
+                        f"  Tamaño promedio: {avg_size:.0f} acciones | Bloques grandes: {blocks}\n\n"
+                        f"MICROESTRUCTURA DETECTADA:\n"
+                        f"  Absorción:    {absorption_text}\n"
+                        f"  Agotamiento:  {exhaustion_text}\n"
+                        f"  Aceleración:  {acceleration_text}\n"
+                        f"  Velocidad:    {velocity} trades/min\n\n"
                         f"{trades_text}"
                     )
                 }]
