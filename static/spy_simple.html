@@ -74,25 +74,20 @@
 
     <!-- PRESIÓN (col 2, row 1) -->
     <div class="rounded-2xl p-5 border border-gray-800/60" style="background:rgba(15,15,20,.7);">
-      <div class="flex items-end gap-4 mb-4">
-        <div class="flex-1">
-          <p id="pressureLabel" class="text-3xl font-black tracking-tight text-yellow-500 leading-none mb-3">Esperando flujo...</p>
-          <div class="w-full h-3 rounded-full overflow-hidden bg-gray-800">
-            <div class="h-full flex">
-              <div id="barBuy"  class="h-full bg-green-500 transition-all duration-500" style="width:50%"></div>
-              <div id="barSell" class="h-full bg-red-500   transition-all duration-500" style="width:50%"></div>
-            </div>
+      <div class="flex items-center gap-5 mb-4">
+        <!-- Termómetro vertical -->
+        <div class="flex flex-col items-center gap-1 flex-shrink-0">
+          <span class="font-black uppercase tracking-widest text-green-600" style="font-size:9px">BUY</span>
+          <div class="relative rounded-full bg-gray-900 border border-gray-800 overflow-hidden" style="width:22px;height:120px;">
+            <div id="thermoFill" class="absolute bottom-0 left-0 right-0 transition-all duration-700" style="height:50%;background:#f59e0b;border-radius:9999px 9999px 0 0;"></div>
+            <div class="absolute inset-x-0 border-t border-gray-600/50 pointer-events-none" style="top:50%"></div>
           </div>
+          <div id="thermoBulb" class="rounded-full border-2 border-gray-800 transition-all duration-700 flex-shrink-0" style="width:30px;height:30px;background:#f59e0b;box-shadow:0 0 10px #f59e0b55;"></div>
+          <span class="font-black uppercase tracking-widest text-red-600" style="font-size:9px">SELL</span>
         </div>
-        <div class="flex gap-5 pb-1">
-          <div>
-            <p class="text-xs font-bold text-gray-600 uppercase tracking-widest mb-1">Compradores</p>
-            <p id="statBuy" class="text-xl font-bold text-green-400">0</p>
-          </div>
-          <div>
-            <p class="text-xs font-bold text-gray-600 uppercase tracking-widest mb-1">Vendedores</p>
-            <p id="statSell" class="text-xl font-bold text-red-400">0</p>
-          </div>
+        <!-- Label -->
+        <div class="flex-1">
+          <p id="pressureLabel" class="text-3xl font-black tracking-tight text-yellow-500 leading-none">Esperando flujo...</p>
         </div>
       </div>
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
@@ -223,10 +218,18 @@ function updatePressureUI(f) {
   const buy=f.buy_vol||0, sell=f.sell_vol||0, total=buy+sell;
   const blockBuy=f.block_buy_vol||0, blockSell=f.block_sell_vol||0, blockTotal=blockBuy+blockSell;
   const buyPct=total>0?Math.round(buy/total*100):50, sellPct=100-buyPct;
-  document.getElementById('barBuy').style.width  = buyPct+'%';
-  document.getElementById('barSell').style.width = sellPct+'%';
-  document.getElementById('statBuy').textContent  = buy.toLocaleString();
-  document.getElementById('statSell').textContent = sell.toLocaleString();
+
+  // Termómetro
+  const fill=document.getElementById('thermoFill');
+  const bulb=document.getElementById('thermoBulb');
+  if (fill && bulb) {
+    const color = buyPct>55?'#22c55e' : buyPct<45?'#ef4444' : '#f59e0b';
+    const glow  = buyPct>55?'#22c55e55' : buyPct<45?'#ef444455' : '#f59e0b55';
+    fill.style.height     = buyPct+'%';
+    fill.style.background = color;
+    bulb.style.background = color;
+    bulb.style.boxShadow  = `0 0 10px ${glow}`;
+  }
 
   const label=document.getElementById('pressureLabel');
   const blockAlert=document.getElementById('blockAlert');
