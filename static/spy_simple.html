@@ -69,11 +69,9 @@
 
   <!-- MOBILE TABS -->
   <nav id="mobileTabBar" class="border-b border-gray-900" style="background:rgba(0,0,0,.9);">
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:6px;">
-      <button onclick="setTab('flujo')"    id="tab-flujo"    class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Flujo</button>
-      <button onclick="setTab('niveles')"  id="tab-niveles"  class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Niveles</button>
-      <button onclick="setTab('analisis')" id="tab-analisis" class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Análisis</button>
-      <button onclick="setTab('ts')"       id="tab-ts"       class="tab-btn py-2.5 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">T&amp;S</button>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:6px;">
+      <button onclick="setTab('flujo')"   id="tab-flujo"   class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Flujo &amp; T&amp;S</button>
+      <button onclick="setTab('niveles')" id="tab-niveles" class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Niveles &amp; Análisis</button>
     </div>
   </nav>
 
@@ -559,11 +557,11 @@ function applyMobileMode(){
   const btn=document.getElementById('btnMobile');
   const grid=document.getElementById('mainGrid');
   if(mobileMode){
-    // Override inline grid styles via JS (beats inline style attribute)
     grid.style.gridTemplateColumns='1fr';
     grid.style.gridTemplateRows='auto';
     grid.style.padding='8px';
     grid.style.gap='8px';
+    grid.style.overflowY='auto';
     btn.textContent='Desktop';
     btn.style.color='#60a5fa';
     btn.style.borderColor='#1e3a5f';
@@ -574,6 +572,7 @@ function applyMobileMode(){
     grid.style.gridTemplateRows='auto 1fr auto';
     grid.style.padding='';
     grid.style.gap='';
+    grid.style.overflowY='';
     btn.textContent='Móvil';
     btn.style.color='';
     btn.style.borderColor='';
@@ -584,18 +583,14 @@ function applyMobileMode(){
 function setTab(tab){
   if(!mobileMode)return;
   activeTab=tab;
-  const map={flujo:'panelFlujo',niveles:'panelNiveles',analisis:'panelAnalisis',ts:'panelTS'};
-  // Hide all panels via inline style
+  const tabPanels={flujo:['panelFlujo','panelTS'],niveles:['panelNiveles','panelAnalisis']};
+  // Hide all
   document.querySelectorAll('.m-panel').forEach(p=>{p.style.display='none';p.classList.remove('m-active');});
-  // Show active panel
-  const active=document.getElementById(map[tab]);
-  if(active){
-    active.style.display='flex';
-    active.style.flexDirection='column';
-    active.style.width='100%';
-    active.style.minHeight='calc(100dvh - 116px)';
-    active.classList.add('m-active');
-  }
+  // Show panels for this tab
+  (tabPanels[tab]||[]).forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.style.display='flex';el.style.flexDirection='column';el.style.width='100%';el.style.minHeight='';el.classList.add('m-active');}
+  });
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('tab-active'));
   document.getElementById('tab-'+tab)?.classList.add('tab-active');
 }
