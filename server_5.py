@@ -745,7 +745,7 @@ async def stream():
 
 
 def process_trade(t):
-    """WebSocket IEX — solo actualiza ts_feed y precio. El flow lo maneja fetch_trades_rest (SIP)."""
+    """WebSocket IEX — actualiza ts_feed, precio y flow."""
     try:
         p = float(t.get("p", 0))
         s = int(t.get("s", 0))
@@ -758,7 +758,7 @@ def process_trade(t):
         elif p >= state["spy_price"]:  direction = "BUY"
         else:                          direction = "SELL"
 
-        big          = s >= BLOCK_TRADE_SIZE
+        big           = s >= BLOCK_TRADE_SIZE
         institutional = s >= INSTITUTIONAL_TRADE_SIZE
         entry = {
             "time":          datetime.now().strftime("%H:%M:%S"),
@@ -771,7 +771,25 @@ def process_trade(t):
             "src":           "ws"
         }
         state["ts_feed"].append(entry)
+        if len(state["ts_feed"]) > 2000:
+            state["ts_feed"] = state["ts_feed"][-2000:]
         state["spy_price"] = p
+
+        # ── Flow acumulado ──
+        if direction == "BUY":
+            state["flow"]["buy_vol"] += s
+            if big:
+                state["flow"]["block_buy_vol"] += s
+                state["flow"]["last_block"] = f"COMPRA BLOQUE {s:,} @ {p:.2f}"
+        else:
+            state["flow"]["sell_vol"] += s
+            if big:
+                state["flow"]["block_sell_vol"] += s
+                state["flow"]["last_block"] = f"VENTA BLOQUE {s:,} @ {p:.2f}"
+        if big:
+            state["flow"]["big_trades"] += 1
+        state["flow"]["delta"] = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
+        state["flow"]["last_update"] = datetime.now().strftime("%H:%M:%S")
 
         m = get_et_minutes()
         if is_premarket(m):
@@ -813,7 +831,7 @@ if __name__ == "__main__":
     print(f"API local: http://localhost:{port}")
 
     threading.Thread(target=fetch_snapshot,    daemon=True).start()
-    threading.Thread(target=fetch_trades_rest, daemon=True).start()
+    # fetch_trades_rest deshabilitado — Railway bloquea REST a data.alpaca.markets; flow se calcula en WebSocket
     threading.Thread(target=fetch_oi_levels,   daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
 
