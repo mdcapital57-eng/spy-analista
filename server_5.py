@@ -709,9 +709,13 @@ async def stream():
                     m.get("T") == "success" and m.get("msg") == "authenticated"
                     for m in msgs
                 )
+                conn_limit = isinstance(msgs, list) and any(
+                    m.get("code") == 406 for m in msgs
+                )
                 if not auth_ok:
-                    print("  Auth fallida")
-                    await asyncio.sleep(10)
+                    wait = 30 if conn_limit else 10
+                    print(f"  Auth fallida {'(connection limit — esperando {wait}s para que cierre la anterior)' if conn_limit else ''}")
+                    await asyncio.sleep(wait)
                     continue
 
                 await ws.send(json.dumps({
@@ -738,10 +742,10 @@ async def stream():
                         print(f"  Parse error: {e}")
 
         except Exception as e:
-            print(f"  WS error: {e} — reintentando en 5s...")
+            print(f"  WS error: {e} — reintentando en 15s...")
             state["connected"] = False
             state["mode"]      = "reconectando"
-            await asyncio.sleep(5)
+            await asyncio.sleep(15)
 
 
 def process_trade(t):
