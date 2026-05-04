@@ -527,7 +527,7 @@ def fetch_trades_rest():
     time.sleep(5)
     while True:
         try:
-            params = {"limit": 50, "sort": "desc", "feed": "sip"}
+            params = {"limit": 50, "sort": "desc", "feed": "iex"}
             res  = requests.get(f"{REST_BASE}/stocks/SPY/trades", headers=HEADERS, params=params, timeout=3)
             data = res.json()
             trades_raw = data.get("trades", [])
