@@ -490,7 +490,7 @@ def fetch_snapshot():
     url = f"{REST_BASE}/stocks/snapshots?symbols=SPY"
     while True:
         try:
-            res  = requests.get(url, headers=HEADERS, timeout=5)
+            res  = requests.get(url, headers=HEADERS, timeout=10)
             data = res.json()
             snap = data.get("SPY", {})
 
@@ -528,7 +528,7 @@ def fetch_trades_rest():
     while True:
         try:
             params = {"limit": 50, "sort": "desc", "feed": "iex"}
-            res  = requests.get(f"{REST_BASE}/stocks/SPY/trades", headers=HEADERS, params=params, timeout=3)
+            res  = requests.get(f"{REST_BASE}/stocks/SPY/trades", headers=HEADERS, params=params, timeout=10)
             data = res.json()
             trades_raw = data.get("trades", [])
             if not trades_raw:
@@ -596,6 +596,8 @@ def fetch_trades_rest():
 
         except Exception as e:
             print(f"  REST trades error: {e}")
+            time.sleep(5)
+            continue
         time.sleep(1)
 
 
