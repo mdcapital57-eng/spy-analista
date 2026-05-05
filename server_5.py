@@ -74,6 +74,7 @@ state = {
     "connected":  False,
     "mode":       "iniciando",
     "_flow_reset_date": None,
+    "pcr": {"ratio": None, "calls": None, "puts": None, "date": None},
 }
 
 MAX_TS = 300
@@ -200,6 +201,10 @@ def flow():
 @app.route("/oi_levels")
 def oi_levels():
     return jsonify(state["oi_levels"])
+
+@app.route("/pcr")
+def pcr():
+    return jsonify(state["pcr"])
 
 @app.route("/levels")
 def levels():
@@ -664,6 +669,30 @@ def fetch_oi_levels():
         time.sleep(15)
 
 
+# ── PUT/CALL RATIO — CBOE CSV público ──
+def fetch_pcr():
+    """Descarga el equity put/call ratio de CBOE cada hora."""
+    time.sleep(5)
+    while True:
+        try:
+            res = requests.get(
+                "https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv",
+                timeout=10, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            lines = res.text.strip().split("\n")
+            # Última fila = dato más reciente
+            last = lines[-1].split(",")
+            date_str = last[0].strip()
+            calls    = float(last[1].strip())
+            puts     = float(last[2].strip())
+            ratio    = round(float(last[4].strip()), 2)
+            state["pcr"] = {"ratio": ratio, "calls": int(calls), "puts": int(puts), "date": date_str}
+            print(f"  PCR: {ratio} (calls={int(calls):,} puts={int(puts):,}) [{date_str}]")
+        except Exception as e:
+            print(f"  PCR error: {e}")
+        time.sleep(3600)  # cada hora
+
+
 # ── RESET FLOW AL ABRIR MERCADO ──
 def flow_reset_watcher():
     """Resetea buy/sell vol al inicio de cada sesión de mercado."""
@@ -837,6 +866,7 @@ if __name__ == "__main__":
     threading.Thread(target=fetch_snapshot,    daemon=True).start()
     # fetch_trades_rest deshabilitado — Railway bloquea REST a data.alpaca.markets; flow se calcula en WebSocket
     threading.Thread(target=fetch_oi_levels,   daemon=True).start()
+    threading.Thread(target=fetch_pcr,         daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
 
     print("✓ Servidor listo — abre http://localhost:8765 en Chrome\n")
