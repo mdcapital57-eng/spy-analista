@@ -232,8 +232,9 @@ function clearLevelPrices() {
     raw._date = getETInfo().date;
     localStorage.setItem('spy_manual', JSON.stringify(raw));
   } catch {}
-  // Recargar niveles del servidor (sin overrides de precio)
-  fetchLevels();
+  // Poner todos los precios en 0 visualmente
+  LEVELS.forEach(l => l.price = 0);
+  renderLevels();
 }
 function saveManualOverride(id, field, value) {
   const m = loadManualOverrides();
