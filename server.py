@@ -109,7 +109,7 @@ def get_et_minutes():
 
 def is_premarket(m=None):
     if m is None: m = get_et_minutes()
-    return 240 <= m < 570   # 4:00 AM – 9:30 AM ET
+    return 420 <= m < 570   # 7:00 AM – 9:30 AM ET
 
 def is_market_hours(m=None):
     if m is None: m = get_et_minutes()
