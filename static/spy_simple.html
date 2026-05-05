@@ -339,6 +339,7 @@ async function fetchTS() {
   try {
     const r=await fetch(`${API}/ts/since/${tsIndex}`,{signal:AbortSignal.timeout(2000)});
     const d=await r.json();
+    if (d.total < tsIndex) tsIndex = Math.max(0, d.total - 1);
     if (d.prints?.length) {
       tsBuffer.push(...d.prints);
       if (tsBuffer.length>500) tsBuffer=tsBuffer.slice(-500);
