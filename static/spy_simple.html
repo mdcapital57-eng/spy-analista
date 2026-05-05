@@ -342,7 +342,6 @@ async function fetchTS() {
     if (d.total < tsIndex) tsIndex = Math.max(0, d.total - 1);
     if (d.prints?.length) {
       tsBuffer.push(...d.prints);
-      if (tsBuffer.length>500) tsBuffer=tsBuffer.slice(-500);
       tsIndex=d.total;
       renderTS(d.prints);
     }

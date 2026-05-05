@@ -849,8 +849,6 @@ def process_trade(t):
             "src":           "ws"
         }
         state["ts_feed"].append(entry)
-        if len(state["ts_feed"]) > 2000:
-            state["ts_feed"] = state["ts_feed"][-2000:]
         state["spy_price"] = p
 
         # ── Flow acumulado ──
