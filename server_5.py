@@ -742,8 +742,9 @@ async def stream():
                     m.get("code") == 406 for m in msgs
                 )
                 if not auth_ok:
-                    wait = 30 if conn_limit else 10
-                    print(f"  Auth fallida {'(connection limit — esperando {wait}s para que cierre la anterior)' if conn_limit else ''}")
+                    wait = 60 if conn_limit else 10
+                    msg = f"connection limit 406 — esperando {wait}s" if conn_limit else "credenciales incorrectas"
+                    print(f"  Auth fallida ({msg})")
                     await asyncio.sleep(wait)
                     continue
 
