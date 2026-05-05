@@ -839,7 +839,7 @@ def process_trade(t):
         big           = s >= BLOCK_TRADE_SIZE
         institutional = s >= INSTITUTIONAL_TRADE_SIZE
         entry = {
-            "time":          datetime.now().strftime("%H:%M:%S"),
+            "time":          get_et_now().strftime("%H:%M:%S"),
             "price":         p,
             "size":          s,
             "direction":     direction,
