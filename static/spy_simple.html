@@ -204,13 +204,28 @@ function updateClock() {
 setInterval(updateClock, 1000); updateClock();
 
 // ── MANUAL OVERRIDES (localStorage) ──
+function getETInfo() {
+  // ET = UTC-4 (EDT)
+  const etNow = new Date(Date.now() - 4*3600*1000);
+  return { date: etNow.toISOString().slice(0,10), hour: etNow.getUTCHours() };
+}
 function loadManualOverrides() {
-  try { return JSON.parse(localStorage.getItem('spy_manual')||'{}'); } catch { return {}; }
+  try {
+    const raw = JSON.parse(localStorage.getItem('spy_manual')||'{}');
+    const et = getETInfo();
+    // Borrar si es un día nuevo o si ya pasaron las 4 PM ET
+    if (raw._date !== et.date || et.hour >= 16) {
+      localStorage.removeItem('spy_manual');
+      return {};
+    }
+    return raw;
+  } catch { return {}; }
 }
 function saveManualOverride(id, field, value) {
   const m = loadManualOverrides();
   if (!m[id]) m[id] = {};
   m[id][field] = value;
+  m._date = getETInfo().date;
   localStorage.setItem('spy_manual', JSON.stringify(m));
 }
 function applyManualOverrides(levels) {
