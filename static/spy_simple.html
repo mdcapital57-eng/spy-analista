@@ -58,6 +58,7 @@
       <span id="modePill" class="text-xs font-bold px-2 py-1 rounded bg-gray-900 border border-gray-800 text-gray-500">SIM</span>
       <div id="dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse-slow"></div>
       <span id="clock" class="text-xs text-gray-600 tabular-nums">—</span>
+      <button onclick="clearLevelPrices()" class="text-xs px-2 py-1 rounded border border-gray-800 text-gray-500 hover:border-red-800 hover:text-red-400 transition-colors">Reset $</button>
       <button id="btnMobile" onclick="toggleMobile()" class="text-xs px-2 py-1 rounded border border-gray-800 text-gray-500 hover:border-gray-600 hover:text-gray-300 transition-colors">Móvil</button>
     </div>
   </header>
@@ -220,6 +221,13 @@ function loadManualOverrides() {
     }
     return raw;
   } catch { return {}; }
+}
+function clearLevelPrices() {
+  const m = loadManualOverrides();
+  Object.keys(m).forEach(id => { if (m[id]?.price != null) delete m[id].price; });
+  m._date = getETInfo().date;
+  localStorage.setItem('spy_manual', JSON.stringify(m));
+  fetchLevels();
 }
 function saveManualOverride(id, field, value) {
   const m = loadManualOverrides();
