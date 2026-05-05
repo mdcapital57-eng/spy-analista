@@ -127,7 +127,10 @@
       </div>
 
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
-      <div id="pmBanner" class="hidden flex items-center justify-between px-3 py-1.5 rounded-lg mb-2 border border-gray-800/40" style="background:rgba(10,10,14,.5);gap:8px;"></div>
+      <div id="pmBanner" class="flex items-center justify-between px-3 py-1.5 rounded-lg mb-2 border border-gray-800/40" style="background:rgba(10,10,14,.5);gap:8px;">
+        <span class="text-xs text-gray-600 uppercase tracking-widest">Premarket</span>
+        <span id="pmData" class="text-xs font-bold text-gray-600">Sin datos</span>
+      </div>
 
       <!-- BLOCK CARD -->
       <div id="blockCard" class="rounded-xl border border-gray-800 p-4 flex items-center gap-4" style="background:rgba(10,10,14,.6);">
@@ -265,16 +268,18 @@ function updatePressureUI(f) {
   const buy=f.w_buy_vol||f.buy_vol||0, sell=f.w_sell_vol||f.sell_vol||0, total=buy+sell;
   const blockBuy=f.block_buy_vol||0, blockSell=f.block_sell_vol||0, blockTotal=blockBuy+blockSell;
   const buyPct=total>0?Math.round(buy/total*100):50, sellPct=100-buyPct;
-  // Banner premarket (solo si ya abrió mercado y hay datos PM)
-  const pmBanner=document.getElementById('pmBanner');
-  if(pmBanner){
-    const pmD=f.pm_delta||0;
-    if(pmD!==0){
-      const pmB=f.pm_buy_vol||0,pmS=f.pm_sell_vol||0,pmT=pmB+pmS;
-      const pmPct=pmT>0?Math.round(pmB/pmT*100):50;
+  // Banner premarket
+  const pmData=document.getElementById('pmData');
+  if(pmData){
+    const pmD=f.pm_delta||0,pmB=f.pm_buy_vol||0,pmS=f.pm_sell_vol||0,pmT=pmB+pmS;
+    if(pmT>0){
+      const pmPct=Math.round(pmB/pmT*100);
       const color=pmD>0?'text-green-400':'text-red-400';
-      pmBanner.innerHTML=`<span class="text-xs text-gray-600 uppercase tracking-widest">Premarket</span> <span class="text-xs font-bold ${color}">${pmPct}% BUY · ${100-pmPct}% SELL</span>`;
-      pmBanner.classList.remove('hidden');
+      pmData.className=`text-xs font-bold ${color}`;
+      pmData.textContent=`${pmPct}% BUY · ${100-pmPct}% SELL`;
+    } else {
+      pmData.className='text-xs font-bold text-gray-600';
+      pmData.textContent='Sin datos';
     }
   }
 
