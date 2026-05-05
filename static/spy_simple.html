@@ -225,10 +225,14 @@ function loadManualOverrides() {
   } catch { return {}; }
 }
 function clearLevelPrices() {
-  const m = loadManualOverrides();
-  Object.keys(m).forEach(id => { if (m[id]?.price != null) delete m[id].price; });
-  m._date = getETInfo().date;
-  localStorage.setItem('spy_manual', JSON.stringify(m));
+  // Borrar precios del localStorage
+  try {
+    const raw = JSON.parse(localStorage.getItem('spy_manual')||'{}');
+    Object.keys(raw).forEach(id => { if (raw[id]?.price != null) delete raw[id].price; });
+    raw._date = getETInfo().date;
+    localStorage.setItem('spy_manual', JSON.stringify(raw));
+  } catch {}
+  // Recargar niveles del servidor (sin overrides de precio)
   fetchLevels();
 }
 function saveManualOverride(id, field, value) {
