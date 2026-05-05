@@ -203,22 +203,40 @@ function updateClock() {
 }
 setInterval(updateClock, 1000); updateClock();
 
+// ── MANUAL OVERRIDES (localStorage) ──
+function loadManualOverrides() {
+  try { return JSON.parse(localStorage.getItem('spy_manual')||'{}'); } catch { return {}; }
+}
+function saveManualOverride(id, field, value) {
+  const m = loadManualOverrides();
+  if (!m[id]) m[id] = {};
+  m[id][field] = value;
+  localStorage.setItem('spy_manual', JSON.stringify(m));
+}
+function applyManualOverrides(levels) {
+  const m = loadManualOverrides();
+  return levels.map(l => {
+    if (!m[l.id]) return l;
+    return {...l, ...(m[l.id].tag?{tag:m[l.id].tag}:{}), ...(m[l.id].price!=null?{price:m[l.id].price}:{})};
+  });
+}
+
 // ── FETCH LEVELS ──
 async function fetchLevels() {
   try {
     const r = await fetch(`${API}/levels`, { signal: AbortSignal.timeout(3000) });
     const d = await r.json();
-    if (d.levels?.length) { LEVELS = d.levels; renderLevels(); }
+    if (d.levels?.length) { LEVELS = applyManualOverrides(d.levels); renderLevels(); }
   } catch {
     if (!LEVELS.length) {
-      LEVELS = [
+      LEVELS = applyManualOverrides([
         {id:'pdh', tag:'PREV HIGH',type:'ph',  price:531.40,desc:'High día anterior',oi:null},
         {id:'pdl', tag:'PREV LOW', type:'pl',  price:525.80,desc:'Low día anterior', oi:null},
         {id:'pmh', tag:'PM HIGH',  type:'pmh', price:529.90,desc:'High premarket',   oi:null},
         {id:'pml', tag:'PM LOW',   type:'pml', price:527.30,desc:'Low premarket',    oi:null},
         {id:'oi530',tag:'CALL 530',type:'oic', price:530.00,desc:'ITM Call OI: 284K',oi:284000},
         {id:'oi528',tag:'PUT 528', type:'oip', price:528.00,desc:'ITM Put OI: 198K', oi:198000},
-      ];
+      ]);
       renderLevels();
     }
   }
@@ -438,6 +456,7 @@ function editLevelClass(id,tag,el) {
   event.stopPropagation();
   const v=prompt(`Editar clase de "${tag}":`,tag); if(!v||!v.trim()) return;
   const l=LEVELS.find(x=>x.id===id); if(l){l.tag=v.trim();renderLevels();}
+  saveManualOverride(id,'tag',v.trim());
   fetch(`${API}/levels/set_class`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,class:v.trim()})}).catch(()=>{});
 }
 function editLevelPrice(id,cur,el) {
@@ -445,6 +464,7 @@ function editLevelPrice(id,cur,el) {
   const v=prompt('Editar precio:',cur.toFixed(2)); if(!v) return;
   const p=parseFloat(v.trim()); if(isNaN(p)||p<=0) return;
   const l=LEVELS.find(x=>x.id===id); if(l){l.price=p;renderLevels();}
+  saveManualOverride(id,'price',p);
   fetch(`${API}/levels/set_price`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,price:p})}).catch(()=>{});
 }
 
