@@ -127,6 +127,7 @@
       </div>
 
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
+      <div id="pmBanner" class="hidden flex items-center justify-between px-3 py-1.5 rounded-lg mb-2 border border-gray-800/40" style="background:rgba(10,10,14,.5);gap:8px;"></div>
 
       <!-- BLOCK CARD -->
       <div id="blockCard" class="rounded-xl border border-gray-800 p-4 flex items-center gap-4" style="background:rgba(10,10,14,.6);">
@@ -181,7 +182,7 @@ const TZONE = 0.20;
 
 // ── STATE ──
 let price=529.14, prevPrice=529.14, prevClose=527.90;
-let LEVELS=[], flow={buy_vol:0,sell_vol:0,delta:0,big_trades:0};
+let LEVELS=[], flow={buy_vol:0,sell_vol:0,delta:0,big_trades:0,w_buy_vol:0,w_sell_vol:0,w_delta:0,decay_delta:0,pm_buy_vol:0,pm_sell_vol:0,pm_delta:0};
 let serverOk=false;
 const COOLDOWN_MS = 60*1000;
 let levelCooldowns={}, alertCount=0, tsIndex=0;
@@ -260,9 +261,22 @@ async function fetchFlow() {
 }
 
 function updatePressureUI(f) {
-  const buy=f.buy_vol||0, sell=f.sell_vol||0, total=buy+sell;
+  // Gauge usa volumen ponderado (bloques grandes valen más)
+  const buy=f.w_buy_vol||f.buy_vol||0, sell=f.w_sell_vol||f.sell_vol||0, total=buy+sell;
   const blockBuy=f.block_buy_vol||0, blockSell=f.block_sell_vol||0, blockTotal=blockBuy+blockSell;
   const buyPct=total>0?Math.round(buy/total*100):50, sellPct=100-buyPct;
+  // Banner premarket (solo si ya abrió mercado y hay datos PM)
+  const pmBanner=document.getElementById('pmBanner');
+  if(pmBanner){
+    const pmD=f.pm_delta||0;
+    if(pmD!==0){
+      const pmB=f.pm_buy_vol||0,pmS=f.pm_sell_vol||0,pmT=pmB+pmS;
+      const pmPct=pmT>0?Math.round(pmB/pmT*100):50;
+      const color=pmD>0?'text-green-400':'text-red-400';
+      pmBanner.innerHTML=`<span class="text-xs text-gray-600 uppercase tracking-widest">Premarket</span> <span class="text-xs font-bold ${color}">${pmPct}% BUY · ${100-pmPct}% SELL</span>`;
+      pmBanner.classList.remove('hidden');
+    }
+  }
 
   // Gauge needle: -90deg=SELL | 0deg=NEUTRAL | +90deg=BUY
   const needle=document.getElementById('gaugeNeedle');
@@ -386,7 +400,7 @@ function startSim() {
     el.className=chg>=0?'text-sm text-green-400':'text-sm text-red-400';
     const buy=(flow.buy_vol||0)+(Math.random()>.5?Math.floor(Math.random()*200):0);
     const sell=(flow.sell_vol||0)+(Math.random()>.5?Math.floor(Math.random()*200):0);
-    flow={buy_vol:buy,sell_vol:sell,delta:buy-sell,big_trades:flow.big_trades||0,block_buy_vol:0,block_sell_vol:0,last_block:''};
+    flow={buy_vol:buy,sell_vol:sell,delta:buy-sell,big_trades:flow.big_trades||0,block_buy_vol:0,block_sell_vol:0,last_block:'',w_buy_vol:buy,w_sell_vol:sell,w_delta:buy-sell,decay_delta:buy-sell,pm_buy_vol:0,pm_sell_vol:0,pm_delta:0};
     updatePressureUI(flow); renderLevels(); checkZones();
   },2000);
 }

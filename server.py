@@ -65,7 +65,15 @@ state = {
         "block_buy_vol":  0,
         "block_sell_vol": 0,
         "last_block":     "",
-        "last_update":    ""
+        "last_update":    "",
+        "w_buy_vol":      0.0,   # vol ponderado por tamaño de bloque
+        "w_sell_vol":     0.0,
+        "w_delta":        0.0,
+        "decay_delta":    0.0,   # w_delta con decay temporal (60-min half-life)
+        "pm_buy_vol":     0,     # snapshot premarket al abrir mercado
+        "pm_sell_vol":    0,
+        "pm_delta":       0,
+        "_recent":        [],    # [(timestamp, w_vol, direction), ...] para decay
     },
     "oi_levels":      [],
     "oi_lock_date":   None,  # fecha en que se fijaron los strikes OI
@@ -81,6 +89,13 @@ MAX_TS = 300
 MAX_SPY_SPREAD = 0.25
 BLOCK_TRADE_SIZE = 500
 INSTITUTIONAL_TRADE_SIZE = 2000
+
+def block_weight(size):
+    """Multiplicador por tamaño: bloques grandes pesan más en el delta."""
+    if size >= 5000: return 5.0
+    if size >= 2000: return 3.0
+    if size >= 500:  return 2.0
+    return 1.0
 
 
 # ── TIEMPO ET ──
@@ -695,19 +710,47 @@ def fetch_pcr():
 
 # ── RESET FLOW AL ABRIR MERCADO ──
 def flow_reset_watcher():
-    """Resetea buy/sell vol al inicio de cada sesión de mercado."""
+    """Resetea flow al inicio de sesión regular; guarda snapshot premarket."""
     while True:
         today = get_et_now().date()
         m = get_et_minutes()
         if is_market_hours(m) and state["_flow_reset_date"] != today:
+            # Snapshot premarket antes de resetear
+            state["flow"]["pm_buy_vol"]  = state["flow"]["buy_vol"]
+            state["flow"]["pm_sell_vol"] = state["flow"]["sell_vol"]
+            state["flow"]["pm_delta"]    = state["flow"]["delta"]
+            # Reset sesión regular
             state["flow"]["buy_vol"]       = 0
             state["flow"]["sell_vol"]      = 0
             state["flow"]["delta"]         = 0
             state["flow"]["big_trades"]    = 0
             state["flow"]["block_buy_vol"] = 0
             state["flow"]["block_sell_vol"]= 0
+            state["flow"]["w_buy_vol"]     = 0.0
+            state["flow"]["w_sell_vol"]    = 0.0
+            state["flow"]["w_delta"]       = 0.0
+            state["flow"]["decay_delta"]   = 0.0
+            state["flow"]["_recent"]       = []
             state["_flow_reset_date"]      = today
-            print("  Flow reseteado para nueva sesión.")
+            print("  Flow reseteado para nueva sesión (premarket guardado).")
+        time.sleep(30)
+
+
+def flow_decay_watcher():
+    """Recalcula decay_delta cada 30s usando decay exponencial (half-life 60 min)."""
+    HALF_LIFE = 3600.0
+    while True:
+        now = time.time()
+        recent = state["flow"]["_recent"]
+        decay_buy = decay_sell = 0.0
+        for ts, w, d in recent:
+            age = now - ts
+            factor = math.exp(-math.log(2) * age / HALF_LIFE)
+            if d == "BUY":
+                decay_buy  += w * factor
+            else:
+                decay_sell += w * factor
+        state["flow"]["decay_delta"] = round(decay_buy - decay_sell, 0)
         time.sleep(30)
 
 
@@ -810,20 +853,30 @@ def process_trade(t):
         state["spy_price"] = p
 
         # ── Flow acumulado ──
+        w = block_weight(s) * s  # volumen ponderado
         if direction == "BUY":
-            state["flow"]["buy_vol"] += s
+            state["flow"]["buy_vol"]   += s
+            state["flow"]["w_buy_vol"] += w
             if big:
                 state["flow"]["block_buy_vol"] += s
                 state["flow"]["last_block"] = f"COMPRA BLOQUE {s:,} @ {p:.2f}"
         else:
-            state["flow"]["sell_vol"] += s
+            state["flow"]["sell_vol"]   += s
+            state["flow"]["w_sell_vol"] += w
             if big:
                 state["flow"]["block_sell_vol"] += s
                 state["flow"]["last_block"] = f"VENTA BLOQUE {s:,} @ {p:.2f}"
         if big:
             state["flow"]["big_trades"] += 1
-        state["flow"]["delta"] = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
+        state["flow"]["delta"]   = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
+        state["flow"]["w_delta"] = state["flow"]["w_buy_vol"] - state["flow"]["w_sell_vol"]
         state["flow"]["last_update"] = datetime.now().strftime("%H:%M:%S")
+        # Guardar para decay temporal (máx 4 horas)
+        now_ts = time.time()
+        state["flow"]["_recent"].append((now_ts, w, direction))
+        if len(state["flow"]["_recent"]) % 500 == 0:
+            cutoff = now_ts - 4 * 3600
+            state["flow"]["_recent"] = [x for x in state["flow"]["_recent"] if x[0] > cutoff]
 
         m = get_et_minutes()
         if is_premarket(m):
@@ -869,6 +922,7 @@ if __name__ == "__main__":
     threading.Thread(target=fetch_oi_levels,   daemon=True).start()
     threading.Thread(target=fetch_pcr,         daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
+    threading.Thread(target=flow_decay_watcher, daemon=True).start()
 
     print("✓ Servidor listo — abre http://localhost:8765 en Chrome\n")
 
