@@ -213,8 +213,8 @@ function loadManualOverrides() {
   try {
     const raw = JSON.parse(localStorage.getItem('spy_manual')||'{}');
     const et = getETInfo();
-    // Borrar si es un día nuevo o si ya pasaron las 4 PM ET
-    if (raw._date !== et.date || et.hour >= 16) {
+    // Borrar si es un día nuevo (medianoche ET)
+    if (raw._date !== et.date) {
       localStorage.removeItem('spy_manual');
       return {};
     }
