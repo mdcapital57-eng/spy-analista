@@ -211,7 +211,8 @@ def ts_recent(seconds):
 
 @app.route("/flow")
 def flow():
-    return jsonify(state["flow"])
+    f = {k: v for k, v in state["flow"].items() if k != "_recent"}
+    return jsonify(f)
 
 @app.route("/oi_levels")
 def oi_levels():
