@@ -47,9 +47,17 @@ SCHWAB_STREAM_URL    = "wss://streamer-api.schwab.com/ws"
 schwab_tokens = {
     "access_token":  os.environ.get("SCHWAB_ACCESS_TOKEN", ""),
     "refresh_token": os.environ.get("SCHWAB_REFRESH_TOKEN", ""),
-    # Si hay access_token guardado, asumir que es válido por 25 min más
     "expires_at":    time.time() + 1500 if os.environ.get("SCHWAB_ACCESS_TOKEN") else 0,
 }
+# Cargar tokens desde archivo si existen (sobreviven reinicios en Railway)
+try:
+    with open("/tmp/schwab_tokens.json") as f:
+        saved = json.load(f)
+        if saved.get("access_token"):
+            schwab_tokens.update(saved)
+            print("  Schwab tokens cargados desde /tmp/schwab_tokens.json")
+except Exception:
+    pass
 
 WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"
 REST_BASE  = "https://data.alpaca.markets/v2"
@@ -971,10 +979,14 @@ def schwab_token():
     schwab_tokens["access_token"]  = d.get("access_token", "")
     schwab_tokens["refresh_token"] = d.get("refresh_token", "")
     schwab_tokens["expires_at"]    = time.time() + d.get("expires_in", 1800) - 60
-    print(f"\n✓ SCHWAB TOKENS OBTENIDOS")
-    print(f"  SCHWAB_ACCESS_TOKEN={schwab_tokens['access_token']}")
-    print(f"  SCHWAB_REFRESH_TOKEN={schwab_tokens['refresh_token']}")
-    print("  → Guarda estos valores en Railway env vars para persistirlos\n")
+    # Guardar en archivo local para sobrevivir reinicios
+    try:
+        with open("/tmp/schwab_tokens.json", "w") as f:
+            json.dump(schwab_tokens, f)
+        print("  Tokens guardados en /tmp/schwab_tokens.json")
+    except Exception as e:
+        print(f"  No se pudo guardar tokens: {e}")
+    print(f"\n✓ SCHWAB TOKENS OBTENIDOS — expires_at={schwab_tokens['expires_at']}")
     return jsonify({"ok": True})
 
 @app.route("/schwab/tokens")
@@ -1104,20 +1116,32 @@ def process_schwab_trade(content):
 async def schwab_stream():
     """Streaming WebSocket de Schwab — SIP completo (100% del mercado)."""
     print("\nConectando a Schwab WebSocket (SIP feed)...")
+    fail_count = 0
     while True:
         try:
             # Refrescar token si está por vencer
             if time.time() >= schwab_tokens["expires_at"]:
                 if not schwab_refresh():
+                    fail_count += 1
+                    if fail_count >= 3:
+                        print("  Schwab falló 3 veces — cayendo a Alpaca IEX")
+                        await stream()
+                        return
                     print("  No se pudo refrescar token Schwab — reintentando en 60s")
                     await asyncio.sleep(60)
                     continue
 
             info = schwab_get_streamer_info()
             if not info:
+                fail_count += 1
+                if fail_count >= 3:
+                    print("  Schwab streamer info falló 3 veces — cayendo a Alpaca IEX")
+                    await stream()
+                    return
                 print("  No se pudo obtener streamer info — reintentando en 30s")
                 await asyncio.sleep(30)
                 continue
+            fail_count = 0
 
             customer_id = info.get("schwabClientCustomerId", "")
             correl_id   = info.get("schwabClientCorrelId", "")
