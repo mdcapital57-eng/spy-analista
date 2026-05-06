@@ -1236,7 +1236,17 @@ async def schwab_stream():
                 resp = json.loads(await ws.recv())
                 print(f"  Schwab login: {resp}")
 
-                # SUBSCRIBE TIMESALE_EQUITY + QUOTE
+                # Verificar login OK
+                login_ok = any(
+                    b.get("content", {}).get("code", -1) == 0
+                    for b in resp.get("response", [])
+                )
+                if not login_ok:
+                    print(f"  Schwab login rechazado — reintentando en 30s")
+                    await asyncio.sleep(30)
+                    continue
+
+                # SUBSCRIBE — enviar todas las suscripciones y procesar respuestas en el loop
                 await ws.send(json.dumps({
                     "service": "TIMESALE_EQUITY", "requestid": "1", "command": "SUBS",
                     "SchwabClientCustomerId": customer_id,
@@ -1247,20 +1257,48 @@ async def schwab_stream():
                     "service": "QUOTE", "requestid": "2", "command": "SUBS",
                     "SchwabClientCustomerId": customer_id,
                     "SchwabClientCorrelId":   correl_id,
-                    "parameters": {"keys": "SPY", "fields": "1,2"}  # bid, ask
+                    "parameters": {"keys": "SPY", "fields": "1,2"}
                 }))
+
                 print("✓ Schwab SIP feed activo — 100% del mercado\n")
                 state["connected"] = True
                 state["mode"]      = "live"
 
+                timesale_ok = False
+                msg_count   = 0
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
+                        msg_count += 1
+
+                        # Log primeros mensajes y respuestas de suscripción
+                        for block in msg.get("response", []):
+                            svc  = block.get("service", "")
+                            code = block.get("content", {}).get("code", -1)
+                            print(f"  Schwab SUBS resp [{svc}] code={code}")
+                            if svc == "TIMESALE_EQUITY" and code == 0:
+                                timesale_ok = True
+                            elif svc == "TIMESALE_EQUITY" and code != 0:
+                                # Fallback a LEVELONE_EQUITIES si TIMESALE rechazado
+                                print("  TIMESALE_EQUITY rechazado — suscribiendo LEVELONE_EQUITIES")
+                                await ws.send(json.dumps({
+                                    "service": "LEVELONE_EQUITIES", "requestid": "3", "command": "SUBS",
+                                    "SchwabClientCustomerId": customer_id,
+                                    "SchwabClientCorrelId":   correl_id,
+                                    "parameters": {"keys": "SPY", "fields": "0,3,9,12,13"}
+                                }))
+
+                        # Datos en tiempo real
                         for block in msg.get("data", []):
                             svc = block.get("service", "")
                             for c in block.get("content", []):
                                 if svc == "TIMESALE_EQUITY":
                                     process_schwab_trade(c)
+                                elif svc == "LEVELONE_EQUITIES":
+                                    p = float(c.get("3", 0))   # Last Price
+                                    s = int(float(c.get("9", 0)))  # Last Size
+                                    if p > 0 and s > 0:
+                                        process_schwab_trade({"2": p, "3": s})
                                 elif svc == "QUOTE":
                                     bp = c.get("1", 0)
                                     ap = c.get("2", 0)
@@ -1268,6 +1306,11 @@ async def schwab_stream():
                                     if bid and ask:
                                         state["spy_bid"] = bid
                                         state["spy_ask"] = ask
+
+                        # Log diagnóstico si no llegan trades en los primeros 30 msgs
+                        if msg_count == 30 and not timesale_ok:
+                            print(f"  [DIAG] 30 msgs sin TIMESALE_EQUITY — servicios vistos hasta ahora en data: revisar logs")
+
                     except Exception as e:
                         print(f"  Schwab parse error: {e}")
 
@@ -1295,7 +1338,7 @@ if __name__ == "__main__":
     print(f"API local: http://localhost:{port}")
 
     threading.Thread(target=fetch_snapshot,    daemon=True).start()
-    # fetch_trades_rest deshabilitado — Railway bloquea REST a data.alpaca.markets; flow se calcula en WebSocket
+    threading.Thread(target=fetch_trades_rest, daemon=True).start()
     threading.Thread(target=fetch_oi_levels,   daemon=True).start()
     threading.Thread(target=fetch_pcr,         daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
