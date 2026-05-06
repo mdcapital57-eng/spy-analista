@@ -1155,8 +1155,6 @@ def process_schwab_trade(content):
             "src":           "schwab"
         }
         state["ts_feed"].append(entry)
-        if len(state["ts_feed"]) > MAX_TS * 3:
-            state["ts_feed"] = state["ts_feed"][-MAX_TS:]
         state["spy_price"] = p
 
         w = block_weight(s) * s
