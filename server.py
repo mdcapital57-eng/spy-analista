@@ -1,13 +1,11 @@
 """
-SPY Monitor — Servidor Alpaca API
-===================================
+SPY Monitor — Schwab SIP
+=========================
 INSTALACIÓN (una sola vez):
     pip install websockets flask flask-cors requests
 
 USO:
-    python server_5.py
-
-Luego abre http://localhost:8765 en Chrome.
+    python server.py
 """
 
 import asyncio
@@ -26,10 +24,6 @@ import websockets
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-# ── ALPACA KEYS ──
-API_KEY    = os.environ.get("ALPACA_KEY",    "PKHAR2FELTASKYPNEEM72WJO3Y")
-API_SECRET = os.environ.get("ALPACA_SECRET", "25cTgaAp6XYSQF6pAZYAraibYBXgY4ZmJcnTe2eNSB6A")
 
 # ── CLAUDE ──
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
@@ -112,11 +106,7 @@ try:
 except Exception:
     pass
 
-REST_BASE  = "https://data.alpaca.markets/v2"
-HEADERS    = {
-    "APCA-API-KEY-ID":     API_KEY,
-    "APCA-API-SECRET-KEY": API_SECRET
-}
+SCHWAB_MARKET_BASE = "https://api.schwabapi.com/marketdata/v1"
 
 # ── ESTADO ──
 state = {
@@ -581,7 +571,7 @@ def analyze():
                     "role": "user",
                     "content": (
                         f"Nivel: {lvl_tag} ${lvl_price:.2f} — {lvl_desc}\n"
-                        f"SPY: ${spy_price:.2f} | {'LIVE Alpaca IEX' if mode == 'live' else 'SIMULADO'}\n\n"
+                        f"SPY: ${spy_price:.2f} | {'LIVE Schwab SIP' if mode == 'live' else 'SIMULADO'}\n\n"
                         f"FLUJO SESIÓN — BUY: {buy_pct}% ({buy_vol:,}) | SELL: {sell_pct}% ({sell_vol:,}) | Delta: {delta_pct:+.1f}%\n\n"
                         f"FLUJO EN ZONA — {zone_total} trades a {velocity} trades/min\n"
                         f"  BUY: {zone_buy_vol:,} ({zone_buy_pct}%) | SELL: {zone_sell_vol:,} ({100-zone_buy_pct:.1f}%)\n"
@@ -602,39 +592,79 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 
-# ── REST — SNAPSHOT SPY ──
+# ── SCHWAB MARKET DATA HELPER ──
+def schwab_market_get(path, params=None):
+    """GET al API de market data de Schwab con auto-refresh de token."""
+    for attempt in range(2):
+        token = schwab_tokens.get("access_token", "")
+        if not token:
+            return None
+        try:
+            r = requests.get(
+                f"{SCHWAB_MARKET_BASE}{path}",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+                timeout=10
+            )
+            if r.status_code == 401 and attempt == 0:
+                schwab_refresh()
+                continue
+            if r.status_code == 200:
+                return r.json()
+            print(f"  Schwab market GET {path} error {r.status_code}: {r.text[:120]}")
+            return None
+        except Exception as e:
+            print(f"  Schwab market GET {path} exception: {e}")
+            return None
+    return None
+
+
+# ── REST — SNAPSHOT SPY (Schwab) ──
 def fetch_snapshot():
-    """Snapshot SPY cada 5s via REST (prev_high, prev_low, open, etc.)"""
-    url = f"{REST_BASE}/stocks/snapshots?symbols=SPY"
+    """Quote + historial diario de SPY via Schwab marketdata API cada 5s."""
+    prev_fetched = False
     while True:
         try:
-            res  = requests.get(url, headers=HEADERS, timeout=10)
-            data = res.json()
-            snap = data.get("SPY", {})
+            if not schwab_tokens.get("access_token"):
+                time.sleep(5)
+                continue
 
-            daily  = snap.get("dailyBar", {})
-            prev   = snap.get("prevDailyBar", {})
-            latest = snap.get("latestTrade", {})
-            quote  = snap.get("latestQuote", {})
+            # Quote: precio actual, bid/ask, barras del día, prev close
+            data = schwab_market_get("/quotes", {"symbols": "SPY", "fields": "quote"})
+            if data and "SPY" in data:
+                q = data["SPY"].get("quote", {})
+                p = float(q.get("lastPrice") or q.get("mark") or state["spy_price"] or 0)
+                if p > 0:
+                    bid, ask = clean_bid_ask(p, q.get("bidPrice"), q.get("askPrice"))
+                    state["spy_price"]      = p
+                    state["spy_bid"]        = bid
+                    state["spy_ask"]        = ask
+                    state["spy_open"]       = float(q.get("openPrice") or 0)
+                    state["spy_high"]       = float(q.get("highPrice") or 0)
+                    state["spy_low"]        = float(q.get("lowPrice") or 0)
+                    state["spy_prev_close"] = float(q.get("closePrice") or 0)
+                    state["spy_volume"]     = int(q.get("totalVolume") or 0)
 
-            p = float(latest.get("p") or daily.get("c") or state["spy_price"] or 0)
-            if p > 0:
-                bid, ask = clean_bid_ask(p, quote.get("bp"), quote.get("ap"))
-                state["spy_price"]      = p
-                state["spy_bid"]        = bid
-                state["spy_ask"]        = ask
-                state["spy_open"]       = float(daily.get("o") or 0)
-                state["spy_high"]       = float(daily.get("h") or 0)
-                state["spy_low"]        = float(daily.get("l") or 0)
-                state["spy_prev_close"] = float(prev.get("c") or 0)
-                state["spy_prev_high"]  = float(prev.get("h") or 0)
-                state["spy_prev_low"]   = float(prev.get("l") or 0)
-                state["spy_volume"]     = int(daily.get("v") or 0)
-                print(f"  SPY: ${p:.2f}  PrevH:${state['spy_prev_high']:.2f}  PrevL:${state['spy_prev_low']:.2f}  PMH:${state['spy_pm_high']:.2f}  PML:${state['spy_pm_low']:.2f}")
+            # Historial: prev day high/low — solo hasta obtenerlos
+            if not prev_fetched or state["spy_prev_high"] == 0:
+                hist = schwab_market_get("/pricehistory", {
+                    "symbol": "SPY", "periodType": "day", "period": 2,
+                    "frequencyType": "daily", "frequency": 1,
+                    "needExtendedHoursData": "false"
+                })
+                if hist:
+                    candles = hist.get("candles", [])
+                    if len(candles) >= 2:
+                        prev = candles[-2]
+                        state["spy_prev_high"] = float(prev.get("high") or 0)
+                        state["spy_prev_low"]  = float(prev.get("low") or 0)
+                        prev_fetched = True
+
+            print(f"  SPY: ${state['spy_price']:.2f}  PrevH:${state['spy_prev_high']:.2f}  PrevL:${state['spy_prev_low']:.2f}  PMH:${state['spy_pm_high']:.2f}  PML:${state['spy_pm_low']:.2f}")
 
         except Exception as e:
             print(f"  Snapshot error: {e}")
-        time.sleep(1)
+        time.sleep(5)
 
 
 
@@ -1098,9 +1128,8 @@ async def schwab_stream():
 # ── MAIN ──
 if __name__ == "__main__":
     print("=" * 50)
-    print("  SPY Monitor — Alpaca API")
+    print("  SPY Monitor — Schwab SIP")
     print("=" * 50)
-    print(f"  Key: {API_KEY[:8]}...")
     print()
 
     port = int(os.environ.get("PORT", 8765))
@@ -1118,10 +1147,9 @@ if __name__ == "__main__":
     threading.Thread(target=flow_decay_watcher, daemon=True).start()
 
     if schwab_tokens["access_token"] or schwab_tokens["refresh_token"]:
-        print("✓ Schwab configurado — usando SIP feed (100% del mercado)")
+        print("✓ Schwab configurado — SIP feed (100% del mercado)")
     else:
-        print("✓ Usando Alpaca IEX feed (~2-3% del mercado)")
-        print(f"  Para activar Schwab visita: /schwab/auth")
+        print("  Sin tokens Schwab — visita /schwab/auth para conectar")
     print()
 
     try:
