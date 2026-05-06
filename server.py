@@ -35,6 +35,60 @@ API_SECRET = os.environ.get("ALPACA_SECRET", "25cTgaAp6XYSQF6pAZYAraibYBXgY4ZmJc
 # ── CLAUDE ──
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 
+# ── RAILWAY API ──
+RAILWAY_TOKEN      = os.environ.get("RAILWAY_TOKEN", "")
+RAILWAY_PROJECT_ID = os.environ.get("RAILWAY_PROJECT_ID", "932dc39b-7a66-479f-a680-77ba163a962b")
+
+def railway_update_tokens(access_token, refresh_token):
+    """Actualiza SCHWAB_ACCESS_TOKEN y SCHWAB_REFRESH_TOKEN en Railway env vars."""
+    if not RAILWAY_TOKEN:
+        return
+    try:
+        # Obtener serviceId y environmentId del proyecto
+        query = """
+        query($id: String!) {
+          project(id: $id) {
+            services { edges { node { id name } } }
+            environments { edges { node { id name } } }
+          }
+        }"""
+        r = requests.post(
+            "https://backboard.railway.app/graphql/v2",
+            headers={"Authorization": f"Bearer {RAILWAY_TOKEN}", "Content-Type": "application/json"},
+            json={"query": query, "variables": {"id": RAILWAY_PROJECT_ID}},
+            timeout=10
+        )
+        data = r.json().get("data", {}).get("project", {})
+        services = data.get("services", {}).get("edges", [])
+        envs     = data.get("environments", {}).get("edges", [])
+        service_id = next((s["node"]["id"] for s in services if s["node"]["name"] == "web"), None)
+        env_id     = next((e["node"]["id"] for e in envs if e["node"]["name"] == "production"), None)
+        if not service_id or not env_id:
+            print(f"  Railway: no se encontró service/env — services={services} envs={envs}")
+            return
+        # Actualizar variables
+        mutation = """
+        mutation($input: VariableCollectionUpsertInput!) {
+          variableCollectionUpsert(input: $input)
+        }"""
+        r2 = requests.post(
+            "https://backboard.railway.app/graphql/v2",
+            headers={"Authorization": f"Bearer {RAILWAY_TOKEN}", "Content-Type": "application/json"},
+            json={"query": mutation, "variables": {"input": {
+                "projectId":     RAILWAY_PROJECT_ID,
+                "serviceId":     service_id,
+                "environmentId": env_id,
+                "variables": {
+                    "SCHWAB_ACCESS_TOKEN":  access_token,
+                    "SCHWAB_REFRESH_TOKEN": refresh_token,
+                }
+            }}},
+            timeout=10
+        )
+        print(f"  Railway env vars actualizados: {r2.json()}")
+    except Exception as e:
+        print(f"  Railway update error: {e}")
+
 # ── SCHWAB ──
 SCHWAB_CLIENT_ID     = os.environ.get("SCHWAB_CLIENT_ID", "")
 SCHWAB_CLIENT_SECRET = os.environ.get("SCHWAB_CLIENT_SECRET", "")
@@ -987,6 +1041,10 @@ def schwab_token():
     except Exception as e:
         print(f"  No se pudo guardar tokens: {e}")
     print(f"\n✓ SCHWAB TOKENS OBTENIDOS — expires_at={schwab_tokens['expires_at']}")
+    # Actualizar Railway env vars automáticamente
+    threading.Thread(target=railway_update_tokens, args=(
+        schwab_tokens["access_token"], schwab_tokens["refresh_token"]
+    ), daemon=True).start()
     return jsonify({"ok": True})
 
 @app.route("/schwab/tokens")
@@ -1023,6 +1081,9 @@ def schwab_refresh():
             schwab_tokens["refresh_token"] = d.get("refresh_token", schwab_tokens["refresh_token"])
             schwab_tokens["expires_at"]    = time.time() + d.get("expires_in", 1800) - 60
             print("  Schwab token refrescado OK")
+            threading.Thread(target=railway_update_tokens, args=(
+                schwab_tokens["access_token"], schwab_tokens["refresh_token"]
+            ), daemon=True).start()
             return True
         else:
             print(f"  Schwab refresh error: {r.text}")
