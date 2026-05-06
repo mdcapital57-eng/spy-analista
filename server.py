@@ -976,6 +976,15 @@ def schwab_token():
     print("  → Guarda estos valores en Railway env vars para persistirlos\n")
     return jsonify({"ok": True})
 
+@app.route("/schwab/tokens")
+def schwab_tokens_view():
+    """Muestra los tokens actuales para copiarlos a Railway."""
+    return jsonify({
+        "SCHWAB_ACCESS_TOKEN":  schwab_tokens["access_token"],
+        "SCHWAB_REFRESH_TOKEN": schwab_tokens["refresh_token"],
+        "expires_at": schwab_tokens["expires_at"],
+    })
+
 @app.route("/schwab/status")
 def schwab_status():
     return jsonify({
