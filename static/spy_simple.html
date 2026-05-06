@@ -403,7 +403,6 @@ async function fetchTS() {
 function renderTS(newPrints) {
   const list=document.getElementById('tsList');
   if (!list) return;
-  const atBottom=list.scrollTop+list.clientHeight>=list.scrollHeight-10;
   newPrints.forEach(p => {
     const isBig=p.big||p.institutional;
     const isBuy=p.direction==='BUY';
@@ -415,10 +414,9 @@ function renderTS(newPrints) {
       `<span class="w-16 text-right flex-shrink-0">${p.size.toLocaleString()}</span>`+
       `<span class="w-14 text-right flex-shrink-0">$${p.price.toFixed(2)}</span>`+
       (p.note?`<span class="text-yellow-500 text-xs">${p.note}</span>`:'');
-    list.appendChild(row);
+    list.prepend(row);
   });
-  while (list.children.length>TS_DISPLAY) list.removeChild(list.firstChild);
-  if (atBottom) list.scrollTop=list.scrollHeight;
+  while (list.children.length>TS_DISPLAY) list.removeChild(list.lastChild);
   document.getElementById('tsTotalLabel').textContent=`${tsIndex.toLocaleString()} prints`;
 }
 
