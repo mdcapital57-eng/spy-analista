@@ -225,14 +225,16 @@ function loadManualOverrides() {
   } catch { return {}; }
 }
 function clearLevelPrices() {
-  // Borrar precios del localStorage
   try {
     const raw = JSON.parse(localStorage.getItem('spy_manual')||'{}');
-    Object.keys(raw).forEach(id => { if (raw[id]?.price != null) delete raw[id].price; });
+    // Guardar price=0 para cada nivel como override explícito
+    LEVELS.forEach(l => {
+      if (!raw[l.id]) raw[l.id] = {};
+      raw[l.id].price = 0;
+    });
     raw._date = getETInfo().date;
     localStorage.setItem('spy_manual', JSON.stringify(raw));
   } catch {}
-  // Poner todos los precios en 0 visualmente
   LEVELS.forEach(l => l.price = 0);
   renderLevels();
 }
@@ -247,7 +249,8 @@ function applyManualOverrides(levels) {
   const m = loadManualOverrides();
   return levels.map(l => {
     if (!m[l.id]) return l;
-    return {...l, ...(m[l.id].tag?{tag:m[l.id].tag}:{}), ...(m[l.id].price!=null?{price:m[l.id].price}:{})};
+    const o = m[l.id];
+    return {...l, ...(o.tag?{tag:o.tag}:{}), ...('price' in o?{price:o.price}:{})};
   });
 }
 
