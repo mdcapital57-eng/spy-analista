@@ -551,13 +551,19 @@ async function fireAlert(lvl) {
     </div>`;
   document.getElementById('feed').prepend(card);
 
-  let zoneTrades=tsBuffer.slice();  // todas las transacciones del buffer
+  // Trades cerca del nivel (precio ±0.80) en los últimos 10 min — análisis de zona
+  const nowMs = Date.now();
+  const zoneTrades = tsBuffer.filter(t =>
+    Math.abs((t.price||0) - lvl.price) <= 0.80
+  ).slice(-200);
+  // Todos los trades de sesión para contexto global
+  const allTrades = tsBuffer.slice();
   try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
 
   try {
     const res=await fetch(`${API}/analyze`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lvl_tag:lvl.tag,lvl_type:lvl.type,lvl_price:lvl.price,lvl_desc:lvl.desc,spy_price:price,buy_vol:snap.buy_vol||0,sell_vol:snap.sell_vol||0,mode:serverOk?'live':'sim',trades:zoneTrades})
+      body:JSON.stringify({lvl_tag:lvl.tag,lvl_type:lvl.type,lvl_price:lvl.price,lvl_desc:lvl.desc,spy_price:price,buy_vol:snap.buy_vol||0,sell_vol:snap.sell_vol||0,mode:serverOk?'live':'sim',trades:zoneTrades,all_trades:allTrades})
     });
     const data=await res.json();
     const text=data.content?.map(b=>b.text||'').join('')||'';

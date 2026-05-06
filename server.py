@@ -335,7 +335,8 @@ def analyze():
     buy_vol   = data.get("buy_vol", state["flow"]["buy_vol"])
     sell_vol  = data.get("sell_vol", state["flow"]["sell_vol"])
     mode      = data.get("mode", state["mode"])
-    trades    = data.get("trades", [])
+    trades     = data.get("trades", [])      # trades cerca del nivel
+    all_trades = data.get("all_trades", [])  # todos los trades de sesión
 
     # Métricas calculadas para darle contexto numérico a Claude
     total_vol   = buy_vol + sell_vol
@@ -424,7 +425,7 @@ def analyze():
             )
 
     # Sin datos suficientes — no forzar análisis
-    if zone_total < 5:
+    if zone_total < 3:
         return jsonify({
             "content": [{
                 "type": "text",
@@ -437,37 +438,38 @@ def analyze():
             }]
         })
 
-    # Formatear trades para el prompt — todos los trades, resumen agregado + detalle reciente
-    if trades:
-        total_trades = len(trades)
-        # Estadísticas globales de todos los trades
-        all_buys  = [t for t in trades if t.get("direction") == "BUY"]
-        all_sells = [t for t in trades if t.get("direction") == "SELL"]
-        all_buy_vol  = sum(t.get("size", 0) for t in all_buys)
-        all_sell_vol = sum(t.get("size", 0) for t in all_sells)
-        all_blocks   = sum(1 for t in trades if t.get("big"))
-        all_total_vol = all_buy_vol + all_sell_vol
-        all_buy_pct = round(all_buy_vol / all_total_vol * 100, 1) if all_total_vol > 0 else 0
-        summary_line = (
-            f"RESUMEN TOTAL SESIÓN ({total_trades} trades): "
-            f"BUY {all_buy_vol:,} ({all_buy_pct}%) | SELL {all_sell_vol:,} ({100-all_buy_pct:.1f}%) | "
-            f"Bloques grandes: {all_blocks}"
+    # Resumen global de TODOS los trades de sesión
+    if all_trades:
+        s_buys  = [t for t in all_trades if t.get("direction") == "BUY"]
+        s_sells = [t for t in all_trades if t.get("direction") == "SELL"]
+        s_bvol  = sum(t.get("size", 0) for t in s_buys)
+        s_svol  = sum(t.get("size", 0) for t in s_sells)
+        s_tot   = s_bvol + s_svol
+        s_bpct  = round(s_bvol / s_tot * 100, 1) if s_tot > 0 else 0
+        s_blk   = sum(1 for t in all_trades if t.get("big"))
+        session_summary = (
+            f"SESIÓN COMPLETA ({len(all_trades)} trades): "
+            f"BUY {s_bvol:,} ({s_bpct}%) | SELL {s_svol:,} ({100-s_bpct:.1f}%) | "
+            f"Bloques grandes: {s_blk}"
         )
-        # Detalle de los últimos 150 trades (los más recientes y relevantes)
-        detail_trades = trades[-150:]
+    else:
+        session_summary = "Sin datos de sesión."
+
+    # Detalle de trades en zona (precio ±0.80 del nivel)
+    if trades:
         lines = []
-        for t in detail_trades:
+        for t in trades[-150:]:
             note = f" [{t.get('note')}]" if t.get("note") else ""
             lines.append(
                 f"  {t.get('time','')} | {t.get('direction','')} | "
                 f"{t.get('size',0):,} @ ${t.get('price',0):.2f}{note}"
             )
         trades_text = (
-            f"{summary_line}\n\n"
-            f"Últimas {len(detail_trades)} transacciones (detalle):\n" + "\n".join(lines)
+            f"{session_summary}\n\n"
+            f"TRADES EN ZONA ({len(trades)} trades ±$0.80 del nivel):\n" + "\n".join(lines)
         )
     else:
-        trades_text = "Sin trades capturados en la zona."
+        trades_text = f"{session_summary}\n\nSin trades capturados cerca del nivel."
 
     try:
         res = requests.post(
@@ -489,10 +491,10 @@ def analyze():
                     "• AGOTAMIENTO: Tamaño promedio cae >35% en prints de dirección dominante → momentum debilitándose.\n"
                     "• ACELERACIÓN: Tamaño promedio sube >40% en segunda mitad → momentum creciendo.\n"
                     "• FLUJO DOMINANTE: >60% del volumen de zona en una sola dirección.\n\n"
-                    "REGLAS DE DECISIÓN — requiere ≥2 condiciones alineadas:\n"
-                    "COMPRA si ≥2: (a) flujo BUY zona ≥55%, (b) ventas absorbidas, (c) aceleración alcista, (d) agotamiento vendedor\n"
-                    "VENTA si ≥2: (a) flujo SELL zona ≥55%, (b) compras absorbidas, (c) aceleración bajista, (d) agotamiento comprador\n"
-                    "NO TRADE si: <2 condiciones alineadas, señales contradictorias, velocidad <5 trades/min, o datos insuficientes\n\n"
+                    "REGLAS DE DECISIÓN — requiere ≥1 condición clara:\n"
+                    "COMPRA si ≥1: (a) flujo BUY zona ≥55%, (b) ventas absorbidas, (c) aceleración alcista, (d) agotamiento vendedor\n"
+                    "VENTA si ≥1: (a) flujo SELL zona ≥55%, (b) compras absorbidas, (c) aceleración bajista, (d) agotamiento comprador\n"
+                    "NO TRADE solo si: señales completamente contradictorias o datos insuficientes (<3 trades en zona)\n\n"
                     "Responde SIEMPRE en este formato exacto (sin texto extra):\n"
                     "DECISION: COMPRA | VENTA | NO TRADE\n"
                     "PATRON: [absorción | agotamiento | aceleración | flujo dominante | sin patrón claro]\n"
