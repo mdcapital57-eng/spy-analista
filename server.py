@@ -47,7 +47,8 @@ SCHWAB_STREAM_URL    = "wss://streamer-api.schwab.com/ws"
 schwab_tokens = {
     "access_token":  os.environ.get("SCHWAB_ACCESS_TOKEN", ""),
     "refresh_token": os.environ.get("SCHWAB_REFRESH_TOKEN", ""),
-    "expires_at":    0,
+    # Si hay access_token guardado, asumir que es válido por 25 min más
+    "expires_at":    time.time() + 1500 if os.environ.get("SCHWAB_ACCESS_TOKEN") else 0,
 }
 
 WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"
