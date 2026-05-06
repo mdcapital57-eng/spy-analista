@@ -1039,13 +1039,21 @@ def schwab_get_streamer_info():
             headers={"Authorization": f"Bearer {schwab_tokens['access_token']}"},
             timeout=10
         )
+        print(f"  Schwab userPreference status: {r.status_code}")
         if r.status_code == 401:
+            print("  Token expirado — intentando refrescar...")
             if schwab_refresh():
                 r = requests.get(
                     f"{SCHWAB_API_BASE}/userPreference",
                     headers={"Authorization": f"Bearer {schwab_tokens['access_token']}"},
                     timeout=10
                 )
+            else:
+                print("  Re-autentícate visitando /schwab/auth")
+                return {}
+        if r.status_code != 200:
+            print(f"  Schwab userPreference error {r.status_code}: {r.text[:200]}")
+            return {}
         data = r.json()
         info = data.get("streamerInfo", [{}])[0]
         return info
@@ -1119,23 +1127,20 @@ async def schwab_stream():
     fail_count = 0
     while True:
         try:
-            # Refrescar token si está por vencer
-            if time.time() >= schwab_tokens["expires_at"]:
-                if not schwab_refresh():
-                    fail_count += 1
-                    if fail_count >= 3:
-                        print("  Schwab falló 3 veces — cayendo a Alpaca IEX")
-                        await stream()
-                        return
-                    print("  No se pudo refrescar token Schwab — reintentando en 60s")
-                    await asyncio.sleep(60)
-                    continue
+            # Esperar tokens frescos si el access_token está vacío
+            if not schwab_tokens["access_token"]:
+                print("  Esperando tokens de Schwab (visita /schwab/auth)...")
+                await asyncio.sleep(10)
+                continue
 
             info = schwab_get_streamer_info()
             if not info:
+                # Intentar refrescar solo si falla userPreference
+                if schwab_tokens["refresh_token"]:
+                    schwab_refresh()
                 fail_count += 1
-                if fail_count >= 3:
-                    print("  Schwab streamer info falló 3 veces — cayendo a Alpaca IEX")
+                if fail_count >= 5:
+                    print("  Schwab falló 5 veces — cayendo a Alpaca IEX")
                     await stream()
                     return
                 print("  No se pudo obtener streamer info — reintentando en 30s")
