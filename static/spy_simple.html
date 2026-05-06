@@ -119,15 +119,6 @@
         <p id="pressureLabel" class="text-2xl font-black tracking-tight text-yellow-500 leading-none" style="margin-top:8px">Esperando flujo...</p>
       </div>
 
-      <!-- PUT/CALL RATIO -->
-      <div id="pcrBar" class="flex items-center justify-between px-3 py-2 rounded-lg mb-3 border border-gray-800/60" style="background:rgba(10,10,14,.6);">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-white uppercase tracking-widest">Put/Call</span>
-          <span id="pcrRatio" class="text-sm font-black text-white">—</span>
-        </div>
-        <span id="pcrLabel" class="text-xs font-bold text-white">Cargando...</span>
-        <span id="pcrDate" class="text-xs text-white">—</span>
-      </div>
 
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
       <div id="pmBanner" class="flex items-center justify-between px-3 py-1.5 rounded-lg mb-2 border border-gray-800/40" style="background:rgba(10,10,14,.5);gap:8px;">
@@ -663,23 +654,6 @@ fetchLevels(); setInterval(fetchLevels,30000);
 poll(); setInterval(poll,2000);
 setInterval(fetchTS,500);
 
-// ── PUT/CALL RATIO ──
-async function fetchPCR() {
-  try {
-    const r = await fetch(`${API}/pcr`, { signal: AbortSignal.timeout(3000) });
-    const d = await r.json();
-    if (!d.ratio) return;
-    const ratio = d.ratio;
-    document.getElementById('pcrRatio').textContent = ratio.toFixed(2);
-    document.getElementById('pcrDate').textContent = d.date || '';
-    const el = document.getElementById('pcrLabel');
-    if      (ratio >= 1.0) { el.textContent = '▼ BAJISTA';  el.className = 'text-xs font-bold text-red-400'; }
-    else if (ratio <= 0.7) { el.textContent = '▲ ALCISTA';  el.className = 'text-xs font-bold text-green-400'; }
-    else                   { el.textContent = '↔ NEUTRAL';  el.className = 'text-xs font-bold text-yellow-500'; }
-    document.getElementById('pcrRatio').className = ratio >= 1.0 ? 'text-sm font-black text-red-400' : ratio <= 0.7 ? 'text-sm font-black text-green-400' : 'text-sm font-black text-yellow-500';
-  } catch {}
-}
-fetchPCR(); setInterval(fetchPCR, 300000);
 
 // ── MOBILE MODE ──
 let mobileMode=localStorage.getItem('mobileMode')==='1';
