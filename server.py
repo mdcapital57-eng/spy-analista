@@ -16,7 +16,6 @@ import math
 import sys
 import threading
 import time
-import ssl
 import requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify, send_from_directory, request
@@ -113,7 +112,6 @@ try:
 except Exception:
     pass
 
-WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"
 REST_BASE  = "https://data.alpaca.markets/v2"
 HEADERS    = {
     "APCA-API-KEY-ID":     API_KEY,
@@ -639,89 +637,6 @@ def fetch_snapshot():
         time.sleep(1)
 
 
-# ── REST — TRADES SIP (cinta consolidada) ──
-def fetch_trades_rest():
-    """Polling cada 1s del endpoint REST de trades SIP — única fuente de flow."""
-    last_ts   = None
-    last_price = 0.0   # para tick direction
-    time.sleep(5)
-    while True:
-        try:
-            params = {"limit": 50, "sort": "desc", "feed": "iex"}
-            res  = requests.get(f"{REST_BASE}/stocks/SPY/trades", headers=HEADERS, params=params, timeout=10)
-            data = res.json()
-            trades_raw = data.get("trades", [])
-            if not trades_raw:
-                time.sleep(1)
-                continue
-
-            new_count = 0
-            for t in reversed(trades_raw):   # orden cronológico
-                ts = t.get("t", "")
-                if last_ts and ts <= last_ts:
-                    continue
-                p = float(t.get("p", 0))
-                s = int(t.get("s", 0))
-                if p <= 0 or s <= 0:
-                    continue
-
-                # Tick direction: sube → BUY, baja → SELL, igual → neutro (último conocido)
-                if last_price > 0:
-                    if p > last_price:   direction = "BUY"
-                    elif p < last_price: direction = "SELL"
-                    else:
-                        # precio igual — usar bid/ask si están disponibles
-                        bid, ask = state["spy_bid"], state["spy_ask"]
-                        if ask > 0 and p >= ask:   direction = "BUY"
-                        elif bid > 0 and p <= bid: direction = "SELL"
-                        else:                      direction = "BUY"  # default neutral
-                else:
-                    direction = "BUY"
-                last_price = p
-
-                big          = s >= BLOCK_TRADE_SIZE
-                institutional = s >= INSTITUTIONAL_TRADE_SIZE
-                entry = {
-                    "time":          ts[11:19] if len(ts) > 18 else datetime.now().strftime("%H:%M:%S"),
-                    "price":         p,
-                    "size":          s,
-                    "direction":     direction,
-                    "big":           big,
-                    "institutional": institutional,
-                    "note":          "BLOQUE INST" if institutional else ("BLOQUE" if big else ""),
-                    "src":           "rest"
-                }
-                state["ts_feed"].append(entry)
-                if len(state["ts_feed"]) > 10000:
-                    state["ts_feed"] = state["ts_feed"][-10000:]
-
-                if direction == "BUY":
-                    state["flow"]["buy_vol"] += s
-                else:
-                    state["flow"]["sell_vol"] += s
-                state["flow"]["delta"] = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
-                if big:
-                    state["flow"]["big_trades"] += 1
-                    if direction == "BUY":
-                        state["flow"]["block_buy_vol"] += s
-                        state["flow"]["last_block"] = f"COMPRA BLOQUE {s:,} @ {p:.2f}"
-                    else:
-                        state["flow"]["block_sell_vol"] += s
-                        state["flow"]["last_block"] = f"VENTA BLOQUE {s:,} @ {p:.2f}"
-                state["flow"]["last_update"] = datetime.now().strftime("%H:%M:%S")
-                new_count += 1
-
-            if trades_raw:
-                last_ts = trades_raw[0].get("t", last_ts)
-            if new_count:
-                print(f"  REST trades: +{new_count} (total {len(state['ts_feed'])})")
-
-        except Exception as e:
-            print(f"  REST trades error: {e}")
-            time.sleep(5)
-            continue
-        time.sleep(1)
-
 
 # ── REST — OI LEVELS — se actualizan con el precio hasta que abre el mercado, luego se congelan ──
 def fetch_oi_levels():
@@ -856,151 +771,6 @@ def flow_decay_watcher():
         time.sleep(5)
 
 
-# ── WEBSOCKET — TIME & SALES (Alpaca) ──
-async def stream():
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode    = ssl.CERT_NONE
-
-    print(f"\nConectando a Alpaca WebSocket...")
-
-    while True:
-        try:
-            async with websockets.connect(WS_URL, ssl=ssl_ctx, ping_interval=20) as ws:
-                raw  = await ws.recv()
-                print(f"  Conectado: {json.loads(raw)}")
-
-                await ws.send(json.dumps({
-                    "action": "auth",
-                    "key":    API_KEY,
-                    "secret": API_SECRET
-                }))
-                raw  = await ws.recv()
-                msgs = json.loads(raw)
-                print(f"  Auth: {msgs}")
-
-                auth_ok = isinstance(msgs, list) and any(
-                    m.get("T") == "success" and m.get("msg") == "authenticated"
-                    for m in msgs
-                )
-                conn_limit = isinstance(msgs, list) and any(
-                    m.get("code") == 406 for m in msgs
-                )
-                if not auth_ok:
-                    wait = 60 if conn_limit else 10
-                    msg = f"connection limit 406 — esperando {wait}s" if conn_limit else "credenciales incorrectas"
-                    print(f"  Auth fallida ({msg})")
-                    await asyncio.sleep(wait)
-                    continue
-
-                await ws.send(json.dumps({
-                    "action":  "subscribe",
-                    "trades":  ["SPY"],
-                    "quotes":  ["SPY"]
-                }))
-                raw = await ws.recv()
-                print(f"  Suscripción: {json.loads(raw)}")
-                print("✓ Escuchando SPY en tiempo real...\n")
-
-                state["connected"] = True
-                state["mode"]      = "live"
-
-                async for raw in ws:
-                    try:
-                        msgs = json.loads(raw)
-                        if not isinstance(msgs, list): msgs = [msgs]
-                        for m in msgs:
-                            t = m.get("T", "")
-                            if t == "t":   process_trade(m)
-                            elif t == "q": process_quote_ws(m)
-                    except Exception as e:
-                        print(f"  Parse error: {e}")
-
-        except Exception as e:
-            print(f"  WS error: {e} — reintentando en 15s...")
-            state["connected"] = False
-            state["mode"]      = "reconectando"
-            await asyncio.sleep(15)
-
-
-def process_trade(t):
-    """WebSocket IEX — actualiza ts_feed, precio y flow."""
-    try:
-        p = float(t.get("p", 0))
-        s = int(t.get("s", 0))
-        if p <= 0 or s <= 0: return
-
-        bid = state["spy_bid"]
-        ask = state["spy_ask"]
-        if ask > 0 and p >= ask:       direction = "BUY"
-        elif bid > 0 and p <= bid:     direction = "SELL"
-        elif p >= state["spy_price"]:  direction = "BUY"
-        else:                          direction = "SELL"
-
-        big           = s >= BLOCK_TRADE_SIZE
-        institutional = s >= INSTITUTIONAL_TRADE_SIZE
-        entry = {
-            "time":          get_et_now().strftime("%H:%M:%S"),
-            "price":         p,
-            "size":          s,
-            "direction":     direction,
-            "big":           big,
-            "institutional": institutional,
-            "note":          "BLOQUE INST" if institutional else ("BLOQUE" if big else ""),
-            "src":           "ws"
-        }
-        state["ts_feed"].append(entry)
-        if len(state["ts_feed"]) > 10000:
-            state["ts_feed"] = state["ts_feed"][-10000:]
-        state["spy_price"] = p
-
-        # ── Flow acumulado ──
-        w = block_weight(s) * s  # volumen ponderado
-        if direction == "BUY":
-            state["flow"]["buy_vol"]   += s
-            state["flow"]["w_buy_vol"] += w
-            if big:
-                state["flow"]["block_buy_vol"] += s
-                state["flow"]["last_block"] = f"COMPRA BLOQUE {s:,} @ {p:.2f}"
-        else:
-            state["flow"]["sell_vol"]   += s
-            state["flow"]["w_sell_vol"] += w
-            if big:
-                state["flow"]["block_sell_vol"] += s
-                state["flow"]["last_block"] = f"VENTA BLOQUE {s:,} @ {p:.2f}"
-        if big:
-            state["flow"]["big_trades"] += 1
-        state["flow"]["delta"]   = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
-        state["flow"]["w_delta"] = state["flow"]["w_buy_vol"] - state["flow"]["w_sell_vol"]
-        state["flow"]["last_update"] = datetime.now().strftime("%H:%M:%S")
-        # Guardar para decay temporal (máx 4 horas)
-        now_ts = time.time()
-        state["flow"]["_recent"].append((now_ts, w, direction))
-        if len(state["flow"]["_recent"]) % 500 == 0:
-            cutoff = now_ts - 4 * 3600
-            state["flow"]["_recent"] = [x for x in state["flow"]["_recent"] if x[0] > cutoff]
-
-        m = get_et_minutes()
-        if is_premarket(m):
-            if state["spy_pm_high"] == 0 or p > state["spy_pm_high"]:
-                state["spy_pm_high"] = round(p, 2)
-            if state["spy_pm_low"] == 0 or p < state["spy_pm_low"]:
-                state["spy_pm_low"] = round(p, 2)
-
-    except Exception as e:
-        print(f"  Trade error: {e}")
-
-
-def process_quote_ws(q):
-    try:
-        bp  = q.get("bp", 0)
-        ap  = q.get("ap", 0)
-        bid, ask = clean_bid_ask(state["spy_price"], bp, ap)
-        if bid and ask:
-            state["spy_bid"] = bid
-            state["spy_ask"] = ask
-    except:
-        pass
 
 
 # ── SCHWAB OAUTH ENDPOINTS ──
@@ -1211,9 +981,9 @@ async def schwab_stream():
                     schwab_refresh()
                 fail_count += 1
                 if fail_count >= 5:
-                    print("  Schwab falló 5 veces — cayendo a Alpaca IEX")
-                    await stream()
-                    return
+                    print("  Schwab falló 5 veces — reintentando desde cero en 60s")
+                    fail_count = 0
+                    await asyncio.sleep(60)
                 print("  No se pudo obtener streamer info — reintentando en 30s")
                 await asyncio.sleep(30)
                 continue
@@ -1342,7 +1112,6 @@ if __name__ == "__main__":
     print(f"API local: http://localhost:{port}")
 
     threading.Thread(target=fetch_snapshot,    daemon=True).start()
-    threading.Thread(target=fetch_trades_rest, daemon=True).start()
     threading.Thread(target=fetch_oi_levels,   daemon=True).start()
     threading.Thread(target=fetch_pcr,         daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
@@ -1356,9 +1125,6 @@ if __name__ == "__main__":
     print()
 
     try:
-        if schwab_tokens["access_token"] or schwab_tokens["refresh_token"]:
-            asyncio.run(schwab_stream())
-        else:
-            asyncio.run(stream())
+        asyncio.run(schwab_stream())
     except KeyboardInterrupt:
         print("\nServidor detenido.")
