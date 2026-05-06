@@ -1086,7 +1086,13 @@ def schwab_refresh():
             ), daemon=True).start()
             return True
         else:
-            print(f"  Schwab refresh error: {r.text}")
+            err = r.text
+            print(f"  Schwab refresh error: {err}")
+            # Si el refresh token es inválido, limpiarlo para no seguir intentando
+            if "DECRYPTION_ERROR" in err or "invalid_grant" in err or "unsupported_token_type" in err:
+                print("  Refresh token inválido — limpiando, visita /schwab/auth para reconectar")
+                schwab_tokens["refresh_token"] = ""
+                schwab_tokens["access_token"]  = ""
             return False
     except Exception as e:
         print(f"  Schwab refresh exception: {e}")
