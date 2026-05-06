@@ -293,49 +293,21 @@ def levels():
     """Endpoint principal: devuelve todos los niveles clave dinámicos."""
     lvls = []
 
-    if state["spy_prev_high"] > 0:
+    for key, tag, typ, price_key, desc, strength in [
+        ("pdh", "PREV HIGH", "ph",  "spy_prev_high", "High día anterior", 94),
+        ("pdl", "PREV LOW",  "pl",  "spy_prev_low",  "Low día anterior",  91),
+        ("pmh", "PM HIGH",   "pmh", "spy_pm_high",   "High premarket",    86),
+        ("pml", "PM LOW",    "pml", "spy_pm_low",    "Low premarket",     82),
+    ]:
         lvl = {
-            "id": "pdh", "tag": "PREV HIGH", "type": "ph",
-            "price": state["spy_prev_high"], "desc": "High día anterior",
-            "strength": 94, "oi": None
+            "id": key, "tag": tag, "type": typ,
+            "price": state[price_key], "desc": desc,
+            "strength": strength, "oi": None
         }
-        if "pdh" in state["manual_classes"]:
-            lvl["tag"] = state["manual_classes"]["pdh"]
-        if "pdh" in state["manual_prices"]:
-            lvl["price"] = state["manual_prices"]["pdh"]
-        lvls.append(lvl)
-    if state["spy_prev_low"] > 0:
-        lvl = {
-            "id": "pdl", "tag": "PREV LOW", "type": "pl",
-            "price": state["spy_prev_low"], "desc": "Low día anterior",
-            "strength": 91, "oi": None
-        }
-        if "pdl" in state["manual_classes"]:
-            lvl["tag"] = state["manual_classes"]["pdl"]
-        if "pdl" in state["manual_prices"]:
-            lvl["price"] = state["manual_prices"]["pdl"]
-        lvls.append(lvl)
-    if state["spy_pm_high"] > 0:
-        lvl = {
-            "id": "pmh", "tag": "PM HIGH", "type": "pmh",
-            "price": state["spy_pm_high"], "desc": "High premarket",
-            "strength": 86, "oi": None
-        }
-        if "pmh" in state["manual_classes"]:
-            lvl["tag"] = state["manual_classes"]["pmh"]
-        if "pmh" in state["manual_prices"]:
-            lvl["price"] = state["manual_prices"]["pmh"]
-        lvls.append(lvl)
-    if state["spy_pm_low"] > 0:
-        lvl = {
-            "id": "pml", "tag": "PM LOW", "type": "pml",
-            "price": state["spy_pm_low"], "desc": "Low premarket",
-            "strength": 82, "oi": None
-        }
-        if "pml" in state["manual_classes"]:
-            lvl["tag"] = state["manual_classes"]["pml"]
-        if "pml" in state["manual_prices"]:
-            lvl["price"] = state["manual_prices"]["pml"]
+        if key in state["manual_classes"]:
+            lvl["tag"] = state["manual_classes"][key]
+        if key in state["manual_prices"]:
+            lvl["price"] = state["manual_prices"][key]
         lvls.append(lvl)
 
     # Agregar niveles OI ITM con clases y precios manuales
