@@ -620,7 +620,7 @@ def fetch_snapshot():
             # Historial: prev day high/low — solo hasta obtenerlos
             if not prev_fetched or state["spy_prev_high"] == 0:
                 hist = schwab_market_get("/pricehistory", {
-                    "symbol": "SPY", "periodType": "day", "period": 2,
+                    "symbol": "SPY", "periodType": "month", "period": 1,
                     "frequencyType": "daily", "frequency": 1,
                     "needExtendedHoursData": "false"
                 })
