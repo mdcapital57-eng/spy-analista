@@ -757,7 +757,7 @@ def flow_reset_watcher():
 
 
 def flow_decay_watcher():
-    """Recalcula decay_delta cada 30s usando decay exponencial (half-life 60 min)."""
+    """Recalcula decay_delta cada 5s usando decay exponencial (half-life 60 min)."""
     HALF_LIFE = 3600.0
     while True:
         now = time.time()
@@ -771,7 +771,7 @@ def flow_decay_watcher():
             else:
                 decay_sell += w * factor
         state["flow"]["decay_delta"] = round(decay_buy - decay_sell, 0)
-        time.sleep(30)
+        time.sleep(5)
 
 
 # ── WEBSOCKET — TIME & SALES (Alpaca) ──
