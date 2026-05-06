@@ -437,16 +437,35 @@ def analyze():
             }]
         })
 
-    # Formatear trades para el prompt
+    # Formatear trades para el prompt — todos los trades, resumen agregado + detalle reciente
     if trades:
+        total_trades = len(trades)
+        # Estadísticas globales de todos los trades
+        all_buys  = [t for t in trades if t.get("direction") == "BUY"]
+        all_sells = [t for t in trades if t.get("direction") == "SELL"]
+        all_buy_vol  = sum(t.get("size", 0) for t in all_buys)
+        all_sell_vol = sum(t.get("size", 0) for t in all_sells)
+        all_blocks   = sum(1 for t in trades if t.get("big"))
+        all_total_vol = all_buy_vol + all_sell_vol
+        all_buy_pct = round(all_buy_vol / all_total_vol * 100, 1) if all_total_vol > 0 else 0
+        summary_line = (
+            f"RESUMEN TOTAL SESIÓN ({total_trades} trades): "
+            f"BUY {all_buy_vol:,} ({all_buy_pct}%) | SELL {all_sell_vol:,} ({100-all_buy_pct:.1f}%) | "
+            f"Bloques grandes: {all_blocks}"
+        )
+        # Detalle de los últimos 150 trades (los más recientes y relevantes)
+        detail_trades = trades[-150:]
         lines = []
-        for t in trades[:40]:
+        for t in detail_trades:
             note = f" [{t.get('note')}]" if t.get("note") else ""
             lines.append(
                 f"  {t.get('time','')} | {t.get('direction','')} | "
                 f"{t.get('size',0):,} @ ${t.get('price',0):.2f}{note}"
             )
-        trades_text = "Trades capturados en zona:\n" + "\n".join(lines)
+        trades_text = (
+            f"{summary_line}\n\n"
+            f"Últimas {len(detail_trades)} transacciones (detalle):\n" + "\n".join(lines)
+        )
     else:
         trades_text = "Sin trades capturados en la zona."
 

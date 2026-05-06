@@ -551,8 +551,7 @@ async function fireAlert(lvl) {
     </div>`;
   document.getElementById('feed').prepend(card);
 
-  let zoneTrades=[];
-  try { const r=await fetch(`${API}/ts/recent/60`,{signal:AbortSignal.timeout(2000)}); const d=await r.json(); zoneTrades=d.prints||[]; tsIndex=d.total; } catch {}
+  let zoneTrades=tsBuffer.slice();  // todas las transacciones del buffer
   try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
 
   try {
