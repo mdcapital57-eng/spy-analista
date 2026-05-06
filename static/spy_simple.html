@@ -385,7 +385,7 @@ function updateBlockCard(direction, blockVol, totalBlockVol) {
 }
 
 // ── FETCH T&S ──
-const TS_DISPLAY=80; let tsBuffer=[];
+const TS_DISPLAY=80; let tsBuffer=[], tsMaxSize=0, tsMaxRow=null;
 async function fetchTS() {
   try {
     const r=await fetch(`${API}/ts/since/${tsIndex}`,{signal:AbortSignal.timeout(2000)});
@@ -407,14 +407,21 @@ function renderTS(newPrints) {
   newPrints.forEach(p => {
     const isBig=p.big||p.institutional;
     const isBuy=p.direction==='BUY';
+    const isMax=p.size>tsMaxSize;
     const row=document.createElement('div');
     row.className='flex items-center gap-2 px-4 py-1.5 border-b border-gray-900/50 text-xs '+(isBuy?'text-green-400':'text-red-400')+(isBig?' font-bold':'');
     if (isBig) row.style.background=isBuy?'rgba(0,30,20,.5)':'rgba(30,0,10,.5)';
+    if (isMax) {
+      if (tsMaxRow) { tsMaxRow.style.outline=''; tsMaxRow.style.boxShadow=''; }
+      tsMaxSize=p.size; tsMaxRow=row;
+      row.style.outline='1px solid rgba(251,191,36,.5)';
+      row.style.boxShadow='inset 0 0 12px rgba(251,191,36,.08)';
+    }
     row.innerHTML=`<span class="text-gray-600 w-16 flex-shrink-0">${p.time}</span>`+
       `<span class="w-5 flex-shrink-0">${isBuy?'▲':'▼'}</span>`+
-      `<span class="w-16 text-right flex-shrink-0">${p.size.toLocaleString()}</span>`+
+      `<span class="w-16 text-right flex-shrink-0 ${isMax?'text-yellow-400 font-bold':''}">${p.size.toLocaleString()}</span>`+
       `<span class="w-14 text-right flex-shrink-0">$${p.price.toFixed(2)}</span>`+
-      (p.note?`<span class="text-yellow-500 text-xs">${p.note}</span>`:'');
+      (isMax?`<span class="text-yellow-500 text-xs">★MAX</span>`:(p.note?`<span class="text-yellow-500 text-xs">${p.note}</span>`:''));
     list.appendChild(row);
   });
   while (list.children.length>TS_DISPLAY) list.removeChild(list.firstChild);
