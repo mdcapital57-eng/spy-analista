@@ -692,6 +692,8 @@ def fetch_trades_rest():
                     "src":           "rest"
                 }
                 state["ts_feed"].append(entry)
+                if len(state["ts_feed"]) > 10000:
+                    state["ts_feed"] = state["ts_feed"][-10000:]
 
                 if direction == "BUY":
                     state["flow"]["buy_vol"] += s
@@ -948,6 +950,8 @@ def process_trade(t):
             "src":           "ws"
         }
         state["ts_feed"].append(entry)
+        if len(state["ts_feed"]) > 10000:
+            state["ts_feed"] = state["ts_feed"][-10000:]
         state["spy_price"] = p
 
         # ── Flow acumulado ──
@@ -1155,6 +1159,8 @@ def process_schwab_trade(content):
             "src":           "schwab"
         }
         state["ts_feed"].append(entry)
+        if len(state["ts_feed"]) > 10000:
+            state["ts_feed"] = state["ts_feed"][-10000:]
         state["spy_price"] = p
 
         w = block_weight(s) * s
