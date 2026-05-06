@@ -46,19 +46,19 @@
   <!-- HEADER -->
   <header class="flex items-center gap-4 px-6 py-3 border-b border-gray-900" style="background:rgba(0,0,0,.7);backdrop-filter:blur(12px);">
     <div>
-      <h1 class="text-xl font-black tracking-tight">SPY <span class="text-gray-600 font-normal text-base">Analista</span></h1>
+      <h1 class="text-xl font-black tracking-tight">SPY <span class="text-white font-normal text-base">Analista</span></h1>
     </div>
     <div class="flex items-center gap-2 ml-2">
       <span id="hdrPrice" class="text-2xl font-bold">—</span>
-      <span id="hdrChg" class="text-sm text-gray-400">—</span>
-      <span id="sessionPill" class="text-xs font-bold px-2 py-0.5 rounded-full border border-gray-700 text-gray-500">—</span>
+      <span id="hdrChg" class="text-sm text-white">—</span>
+      <span id="sessionPill" class="text-xs font-bold px-2 py-0.5 rounded-full border border-gray-700 text-white">—</span>
     </div>
     <div class="ml-auto flex items-center gap-4">
-      <span id="tsIndicator" class="text-xs font-bold text-gray-600">● 0 prints</span>
-      <span id="modePill" class="text-xs font-bold px-2 py-1 rounded bg-gray-900 border border-gray-800 text-gray-500">SIM</span>
+      <span id="tsIndicator" class="text-xs font-bold text-white">● 0 prints</span>
+      <span id="modePill" class="text-xs font-bold px-2 py-1 rounded bg-gray-900 border border-gray-800 text-white">SIM</span>
       <div id="dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse-slow"></div>
-      <span id="clock" class="text-xs text-gray-600 tabular-nums">—</span>
-      <button id="btnMobile" onclick="toggleMobile()" class="text-xs px-2 py-1 rounded border border-gray-800 text-gray-500 hover:border-gray-600 hover:text-gray-300 transition-colors">Móvil</button>
+      <span id="clock" class="text-xs text-white tabular-nums">—</span>
+      <button id="btnMobile" onclick="toggleMobile()" class="text-xs px-2 py-1 rounded border border-gray-800 text-white hover:border-gray-600 hover:text-white transition-colors">Móvil</button>
     </div>
   </header>
 
@@ -70,8 +70,8 @@
   <!-- MOBILE TABS -->
   <nav id="mobileTabBar" class="border-b border-gray-900" style="background:rgba(0,0,0,.9);">
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:6px;">
-      <button onclick="setTab('flujo')"   id="tab-flujo"   class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Flujo &amp; T&amp;S</button>
-      <button onclick="setTab('niveles')" id="tab-niveles" class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-gray-500 transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Niveles &amp; Análisis</button>
+      <button onclick="setTab('flujo')"   id="tab-flujo"   class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-white transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Flujo &amp; T&amp;S</button>
+      <button onclick="setTab('niveles')" id="tab-niveles" class="tab-btn py-3 text-xs font-bold border-b-2 border-transparent text-white transition-colors rounded-lg" style="background:rgba(255,255,255,.04)">Niveles &amp; Análisis</button>
     </div>
   </nav>
 
@@ -81,14 +81,14 @@
     <!-- NIVELES (col 1, rows 1-2) -->
     <div id="panelNiveles" class="m-panel row-span-2 rounded-2xl p-4 border border-gray-800/60 flex flex-col" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Niveles Clave</h2>
+        <h2 class="text-xs font-bold text-white uppercase tracking-widest">Niveles Clave</h2>
         <div class="flex items-center gap-2">
-          <button onclick="clearLevelPrices()" class="text-xs px-2 py-0.5 rounded border border-gray-800 text-gray-600 hover:border-red-800 hover:text-red-400 transition-colors">Reset $</button>
-          <span id="levelCount" class="text-xs text-gray-700">—</span>
+          <button onclick="clearLevelPrices()" class="text-xs px-2 py-0.5 rounded border border-gray-800 text-white hover:border-red-800 hover:text-red-400 transition-colors">Reset $</button>
+          <span id="levelCount" class="text-xs text-white">—</span>
         </div>
       </div>
       <div id="levelsList" class="flex-1 overflow-y-auto flex flex-col gap-1"></div>
-      <button onclick="simulateHit()" class="mt-3 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-800 hover:border-gray-600 hover:text-gray-400 transition-colors">↯ Simular zona</button>
+      <button onclick="simulateHit()" class="mt-3 py-2 rounded-lg text-xs font-semibold text-white border border-gray-800 hover:border-gray-600 hover:text-white transition-colors">↯ Simular zona</button>
     </div>
 
     <!-- PRESIÓN (col 2, row 1) -->
@@ -122,17 +122,17 @@
       <!-- PUT/CALL RATIO -->
       <div id="pcrBar" class="flex items-center justify-between px-3 py-2 rounded-lg mb-3 border border-gray-800/60" style="background:rgba(10,10,14,.6);">
         <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Put/Call</span>
-          <span id="pcrRatio" class="text-sm font-black text-gray-400">—</span>
+          <span class="text-xs font-bold text-white uppercase tracking-widest">Put/Call</span>
+          <span id="pcrRatio" class="text-sm font-black text-white">—</span>
         </div>
-        <span id="pcrLabel" class="text-xs font-bold text-gray-600">Cargando...</span>
-        <span id="pcrDate" class="text-xs text-gray-700">—</span>
+        <span id="pcrLabel" class="text-xs font-bold text-white">Cargando...</span>
+        <span id="pcrDate" class="text-xs text-white">—</span>
       </div>
 
       <div id="blockAlert" class="hidden text-xs font-semibold px-3 py-2 rounded-lg mb-3"></div>
       <div id="pmBanner" class="flex items-center justify-between px-3 py-1.5 rounded-lg mb-2 border border-gray-800/40" style="background:rgba(10,10,14,.5);gap:8px;">
-        <span class="text-xs text-gray-600 uppercase tracking-widest">Premarket</span>
-        <span id="pmData" class="text-xs font-bold text-gray-600">Sin datos</span>
+        <span class="text-xs text-white uppercase tracking-widest">Premarket</span>
+        <span id="pmData" class="text-xs font-bold text-white">Sin datos</span>
       </div>
 
       <!-- BLOCK CARD -->
@@ -140,25 +140,25 @@
         <div class="flex-1 flex flex-col gap-2">
           <div class="flex items-center gap-2">
             <div id="bcZoneDot" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></div>
-            <span class="text-xs font-bold text-gray-600 uppercase w-9 flex-shrink-0">Zona</span>
-            <span id="bcZone" class="text-xs font-semibold text-gray-400">Esperando bloque...</span>
+            <span class="text-xs font-bold text-white uppercase w-9 flex-shrink-0">Zona</span>
+            <span id="bcZone" class="text-xs font-semibold text-white">Esperando bloque...</span>
           </div>
           <div class="flex items-center gap-2">
             <div id="bcFlowDot" class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></div>
-            <span class="text-xs font-bold text-gray-600 uppercase w-9 flex-shrink-0">Flow</span>
-            <span id="bcFlow" class="text-xs font-semibold text-gray-400">—</span>
+            <span class="text-xs font-bold text-white uppercase w-9 flex-shrink-0">Flow</span>
+            <span id="bcFlow" class="text-xs font-semibold text-white">—</span>
           </div>
-          <p id="bcConf" class="text-xs text-gray-600 tracking-wide">Confianza: —%</p>
+          <p id="bcConf" class="text-xs text-white tracking-wide">Confianza: —%</p>
         </div>
-        <div id="bcSignal" class="text-2xl font-black px-4 py-3 rounded-xl text-gray-600" style="background:rgba(20,20,20,.8);">—</div>
+        <div id="bcSignal" class="text-2xl font-black px-4 py-3 rounded-xl text-white" style="background:rgba(20,20,20,.8);">—</div>
       </div>
     </div>
 
     <!-- TIME & SALES (col 3, rows 1-2) -->
     <div id="panelTS" class="m-panel row-span-2 rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-900">
-        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Time &amp; Sales</h2>
-        <span id="tsTotalLabel" class="text-xs text-gray-700">0 prints</span>
+        <h2 class="text-xs font-bold text-white uppercase tracking-widest">Time &amp; Sales</h2>
+        <span id="tsTotalLabel" class="text-xs text-white">0 prints</span>
       </div>
       <div id="tsList" class="flex-1 overflow-y-auto font-mono text-xs"></div>
     </div>
@@ -166,9 +166,9 @@
     <!-- ANÁLISIS (col 2, row 2) -->
     <div id="panelAnalisis" class="m-panel rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-900">
-        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Análisis de Zonas</h2>
+        <h2 class="text-xs font-bold text-white uppercase tracking-widest">Análisis de Zonas</h2>
         <span id="alertBadge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full bg-green-500 text-black">0</span>
-        <button onclick="clearFeed()" class="ml-auto text-xs px-3 py-1 border border-gray-800 rounded text-gray-600 hover:border-gray-600 hover:text-gray-400 transition-colors">Limpiar</button>
+        <button onclick="clearFeed()" class="ml-auto text-xs px-3 py-1 border border-gray-800 rounded text-white hover:border-gray-600 hover:text-white transition-colors">Limpiar</button>
       </div>
       <div id="feed" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
         <div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-white py-12">
@@ -410,7 +410,7 @@ function renderTS(newPrints) {
     const row=document.createElement('div');
     row.className='flex items-center gap-2 px-4 py-1.5 border-b border-gray-900/50 text-xs '+(isBuy?'text-green-400':'text-red-400')+(isBig?' font-bold':'');
     if (isBig) row.style.background=isBuy?'rgba(0,30,20,.5)':'rgba(30,0,10,.5)';
-    row.innerHTML=`<span class="text-gray-600 w-16 flex-shrink-0">${p.time}</span>`+
+    row.innerHTML=`<span class="text-white w-16 flex-shrink-0">${p.time}</span>`+
       `<span class="w-5 flex-shrink-0">${isBuy?'▲':'▼'}</span>`+
       `<span class="w-16 text-right flex-shrink-0">${p.size.toLocaleString()}</span>`+
       `<span class="w-14 text-right flex-shrink-0">$${p.price.toFixed(2)}</span>`+
@@ -473,9 +473,9 @@ function renderLevels() {
     return `<div class="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-default hover:bg-white/5 transition-colors" style="${bg}">
       <div class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dotColor}"></div>
       <div class="flex-1 min-w-0">
-        <p class="text-xs font-bold text-gray-500 uppercase tracking-wide"
+        <p class="text-xs font-bold text-white uppercase tracking-wide"
            onclick="editLevelClass('${l.id}','${l.tag.replace(/'/g,"\\'")}',this)" style="cursor:pointer">${l.tag}</p>
-        <p class="text-base font-bold text-gray-200 leading-tight"
+        <p class="text-base font-bold text-white leading-tight"
            onclick="editLevelPrice('${l.id}',${l.price},this)" style="cursor:pointer">$${l.price.toFixed(2)}</p>
       </div>
       ${isZone?'<span class="text-xs font-bold text-yellow-500 animate-pulse">ZONA</span>':''}
@@ -537,11 +537,11 @@ async function fireAlert(lvl) {
   card.style.background='rgba(10,10,14,.8)';
   card.innerHTML=`
     <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-800/50">
-      <span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-800 text-gray-500">Analizando...</span>
-      <span class="text-sm font-semibold text-gray-300 flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
-      <span class="text-xs text-gray-600">${now}</span>
+      <span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-800 text-white">Analizando...</span>
+      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
+      <span class="text-xs text-white">${now}</span>
     </div>
-    <div class="px-4 py-3 flex items-center gap-2 text-xs text-gray-600">
+    <div class="px-4 py-3 flex items-center gap-2 text-xs text-white">
       Analizando con Claude
       <span class="flex gap-1 ml-1">
         <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:0s"></i>
@@ -606,27 +606,27 @@ function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron
   card.innerHTML=`
     <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color:${borderColor}">
       <span class="text-xs font-bold px-2 py-1 rounded-full" style="background:${pillBg};color:${accent}">${pillTxt}</span>
-      <span class="text-sm font-semibold text-gray-300 flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
-      <span class="text-xs text-gray-600">${time}</span>
+      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
+      <span class="text-xs text-white">${time}</span>
     </div>
     <div class="px-4 py-4">
       <div class="flex items-center gap-3 rounded-xl p-3 mb-3" style="background:rgba(0,0,0,.4);border:1px solid ${borderColor}">
         <span class="text-3xl font-black" style="color:${accent}">${icon} ${decision}</span>
-        ${lectura?`<span class="text-xs text-gray-400 leading-relaxed flex-1">${fmt(lectura)}</span>`:''}
+        ${lectura?`<span class="text-xs text-white leading-relaxed flex-1">${fmt(lectura)}</span>`:''}
       </div>
       ${patronBadge?`<div class="mb-2">${patronBadge}</div>`:''}
-      ${analisis?`<p class="text-xs text-gray-500 leading-relaxed mb-3">${fmt(analisis)}</p>`:''}
+      ${analisis?`<p class="text-xs text-white leading-relaxed mb-3">${fmt(analisis)}</p>`:''}
       <div class="flex gap-2 flex-wrap">
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Compradores <span class="text-green-400 font-semibold ml-1">${buy.toLocaleString()}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Vendedores <span class="text-red-400 font-semibold ml-1">${sell.toLocaleString()}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">SPY <span class="text-gray-300 font-semibold ml-1">$${price.toFixed(2)}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-gray-600">Trades <span class="text-yellow-500 font-semibold ml-1">${tc}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Compradores <span class="text-green-400 font-semibold ml-1">${buy.toLocaleString()}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Vendedores <span class="text-red-400 font-semibold ml-1">${sell.toLocaleString()}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">SPY <span class="text-white font-semibold ml-1">$${price.toFixed(2)}</span></span>
+        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Trades <span class="text-yellow-500 font-semibold ml-1">${tc}</span></span>
       </div>
     </div>`;
 }
 
 function clearFeed() {
-  document.getElementById('feed').innerHTML=`<div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-gray-700 py-12"><div class="text-4xl opacity-30">◎</div><p class="text-sm">Monitor limpiado — esperando zonas.</p></div>`;
+  document.getElementById('feed').innerHTML=`<div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-white py-12"><div class="text-4xl opacity-30">◎</div><p class="text-sm">Monitor limpiado — esperando zonas.</p></div>`;
   alertCount=0; document.getElementById('alertBadge').classList.add('hidden');
 }
 
