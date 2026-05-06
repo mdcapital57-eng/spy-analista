@@ -639,6 +639,28 @@ function clearFeed() {
 async function poll() {
   const ok=await fetchQuote(); if(ok) await fetchFlow(); renderLevels(); checkZones();
 }
+// ── SCHWAB OAUTH CALLBACK ──
+(async function handleSchwabCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (!code) return;
+  // Limpiar URL
+  window.history.replaceState({}, '', window.location.pathname);
+  try {
+    const r = await fetch(`${API}/schwab/token`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      alert('✓ Schwab conectado — SIP feed activo (100% del mercado). El servidor se reiniciará en Railway con los nuevos tokens.');
+    } else {
+      console.error('Schwab token error:', d);
+    }
+  } catch(e) { console.error('Schwab callback error:', e); }
+})();
+
 fetchLevels(); setInterval(fetchLevels,30000);
 poll(); setInterval(poll,2000);
 setInterval(fetchTS,500);

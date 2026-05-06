@@ -29,11 +29,26 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ── ALPACA KEYS ──
-API_KEY    = "PKHAR2FELTASKYPNEEM72WJO3Y"
-API_SECRET = "25cTgaAp6XYSQF6pAZYAraibYBXgY4ZmJcnTe2eNSB6A"
+API_KEY    = os.environ.get("ALPACA_KEY",    "PKHAR2FELTASKYPNEEM72WJO3Y")
+API_SECRET = os.environ.get("ALPACA_SECRET", "25cTgaAp6XYSQF6pAZYAraibYBXgY4ZmJcnTe2eNSB6A")
 
 # ── CLAUDE ──
-CLAUDE_API_KEY  = ""        # ← pon aquí tu API key de Anthropic
+CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
+
+# ── SCHWAB ──
+SCHWAB_CLIENT_ID     = os.environ.get("SCHWAB_CLIENT_ID", "")
+SCHWAB_CLIENT_SECRET = os.environ.get("SCHWAB_CLIENT_SECRET", "")
+SCHWAB_REDIRECT_URI  = os.environ.get("SCHWAB_REDIRECT_URI", "https://spy-analista-ouii.vercel.app/")
+SCHWAB_AUTH_URL      = "https://api.schwabapi.com/v1/oauth/authorize"
+SCHWAB_TOKEN_URL     = "https://api.schwabapi.com/v1/oauth/token"
+SCHWAB_API_BASE      = "https://api.schwabapi.com/trader/v1"
+SCHWAB_STREAM_URL    = "wss://streamer-api.schwab.com/ws"
+
+schwab_tokens = {
+    "access_token":  os.environ.get("SCHWAB_ACCESS_TOKEN", ""),
+    "refresh_token": os.environ.get("SCHWAB_REFRESH_TOKEN", ""),
+    "expires_at":    0,
+}
 
 WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"
 REST_BASE  = "https://data.alpaca.markets/v2"
@@ -921,6 +936,242 @@ def process_quote_ws(q):
         pass
 
 
+# ── SCHWAB OAUTH ENDPOINTS ──
+import base64
+
+@app.route("/schwab/auth")
+def schwab_auth():
+    """Genera la URL de autorización de Schwab y redirige al usuario."""
+    url = (
+        f"{SCHWAB_AUTH_URL}?response_type=code"
+        f"&client_id={SCHWAB_CLIENT_ID}"
+        f"&redirect_uri={SCHWAB_REDIRECT_URI}"
+        f"&scope=readonly"
+    )
+    from flask import redirect
+    return redirect(url)
+
+@app.route("/schwab/token", methods=["POST"])
+def schwab_token():
+    """Recibe el code de OAuth, lo intercambia por tokens."""
+    code = (request.get_json() or {}).get("code", "")
+    if not code:
+        return jsonify({"error": "sin code"}), 400
+    creds = base64.b64encode(f"{SCHWAB_CLIENT_ID}:{SCHWAB_CLIENT_SECRET}".encode()).decode()
+    r = requests.post(
+        SCHWAB_TOKEN_URL,
+        headers={"Authorization": f"Basic {creds}", "Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "authorization_code", "code": code, "redirect_uri": SCHWAB_REDIRECT_URI},
+        timeout=10
+    )
+    if r.status_code != 200:
+        return jsonify({"error": r.text}), 400
+    d = r.json()
+    schwab_tokens["access_token"]  = d.get("access_token", "")
+    schwab_tokens["refresh_token"] = d.get("refresh_token", "")
+    schwab_tokens["expires_at"]    = time.time() + d.get("expires_in", 1800) - 60
+    print(f"\n✓ SCHWAB TOKENS OBTENIDOS")
+    print(f"  SCHWAB_ACCESS_TOKEN={schwab_tokens['access_token']}")
+    print(f"  SCHWAB_REFRESH_TOKEN={schwab_tokens['refresh_token']}")
+    print("  → Guarda estos valores en Railway env vars para persistirlos\n")
+    return jsonify({"ok": True})
+
+@app.route("/schwab/status")
+def schwab_status():
+    return jsonify({
+        "configured": bool(SCHWAB_CLIENT_ID and SCHWAB_CLIENT_SECRET),
+        "authenticated": bool(schwab_tokens["access_token"]),
+    })
+
+def schwab_refresh():
+    """Refresca el access token usando el refresh token."""
+    if not schwab_tokens["refresh_token"]:
+        return False
+    try:
+        creds = base64.b64encode(f"{SCHWAB_CLIENT_ID}:{SCHWAB_CLIENT_SECRET}".encode()).decode()
+        r = requests.post(
+            SCHWAB_TOKEN_URL,
+            headers={"Authorization": f"Basic {creds}", "Content-Type": "application/x-www-form-urlencoded"},
+            data={"grant_type": "refresh_token", "refresh_token": schwab_tokens["refresh_token"]},
+            timeout=10
+        )
+        if r.status_code == 200:
+            d = r.json()
+            schwab_tokens["access_token"]  = d.get("access_token", "")
+            schwab_tokens["refresh_token"] = d.get("refresh_token", schwab_tokens["refresh_token"])
+            schwab_tokens["expires_at"]    = time.time() + d.get("expires_in", 1800) - 60
+            print("  Schwab token refrescado OK")
+            return True
+        else:
+            print(f"  Schwab refresh error: {r.text}")
+            return False
+    except Exception as e:
+        print(f"  Schwab refresh exception: {e}")
+        return False
+
+def schwab_get_streamer_info():
+    """Obtiene las credenciales de streaming desde userPreference."""
+    try:
+        r = requests.get(
+            f"{SCHWAB_API_BASE}/userPreference",
+            headers={"Authorization": f"Bearer {schwab_tokens['access_token']}"},
+            timeout=10
+        )
+        if r.status_code == 401:
+            if schwab_refresh():
+                r = requests.get(
+                    f"{SCHWAB_API_BASE}/userPreference",
+                    headers={"Authorization": f"Bearer {schwab_tokens['access_token']}"},
+                    timeout=10
+                )
+        data = r.json()
+        info = data.get("streamerInfo", [{}])[0]
+        return info
+    except Exception as e:
+        print(f"  Schwab streamer info error: {e}")
+        return {}
+
+def process_schwab_trade(content):
+    """Procesa un trade de TIMESALE_EQUITY de Schwab."""
+    try:
+        p = float(content.get("2", 0))
+        s = int(content.get("3", 0))
+        if p <= 0 or s <= 0:
+            return
+        bid = state["spy_bid"]
+        ask = state["spy_ask"]
+        if ask > 0 and p >= ask:       direction = "BUY"
+        elif bid > 0 and p <= bid:     direction = "SELL"
+        elif p >= state["spy_price"]:  direction = "BUY"
+        else:                          direction = "SELL"
+
+        big           = s >= BLOCK_TRADE_SIZE
+        institutional = s >= INSTITUTIONAL_TRADE_SIZE
+        entry = {
+            "time":          get_et_now().strftime("%H:%M:%S"),
+            "price":         p,
+            "size":          s,
+            "direction":     direction,
+            "big":           big,
+            "institutional": institutional,
+            "note":          "BLOQUE INST" if institutional else ("BLOQUE" if big else ""),
+            "src":           "schwab"
+        }
+        state["ts_feed"].append(entry)
+        if len(state["ts_feed"]) > MAX_TS * 3:
+            state["ts_feed"] = state["ts_feed"][-MAX_TS:]
+        state["spy_price"] = p
+
+        w = block_weight(s) * s
+        now_ts = time.time()
+        if direction == "BUY":
+            state["flow"]["buy_vol"]   += s
+            state["flow"]["w_buy_vol"] += w
+            state["flow"]["block_buy_vol"] += s if big else 0
+        else:
+            state["flow"]["sell_vol"]   += s
+            state["flow"]["w_sell_vol"] += w
+            state["flow"]["block_sell_vol"] += s if big else 0
+        if big:
+            state["flow"]["big_trades"] += 1
+        state["flow"]["delta"]   = state["flow"]["buy_vol"] - state["flow"]["sell_vol"]
+        state["flow"]["w_delta"] = state["flow"]["w_buy_vol"] - state["flow"]["w_sell_vol"]
+        state["flow"]["last_update"] = get_et_now().strftime("%H:%M:%S")
+        state["flow"]["_recent"].append((now_ts, w, direction))
+        if len(state["flow"]["_recent"]) % 500 == 0:
+            cutoff = now_ts - 4 * 3600
+            state["flow"]["_recent"] = [x for x in state["flow"]["_recent"] if x[0] > cutoff]
+
+        m = get_et_minutes()
+        if is_premarket(m):
+            if state["spy_pm_high"] == 0 or p > state["spy_pm_high"]:
+                state["spy_pm_high"] = round(p, 2)
+            if state["spy_pm_low"] == 0 or p < state["spy_pm_low"]:
+                state["spy_pm_low"] = round(p, 2)
+    except Exception as e:
+        print(f"  Schwab trade error: {e}")
+
+async def schwab_stream():
+    """Streaming WebSocket de Schwab — SIP completo (100% del mercado)."""
+    print("\nConectando a Schwab WebSocket (SIP feed)...")
+    while True:
+        try:
+            # Refrescar token si está por vencer
+            if time.time() >= schwab_tokens["expires_at"]:
+                if not schwab_refresh():
+                    print("  No se pudo refrescar token Schwab — reintentando en 60s")
+                    await asyncio.sleep(60)
+                    continue
+
+            info = schwab_get_streamer_info()
+            if not info:
+                print("  No se pudo obtener streamer info — reintentando en 30s")
+                await asyncio.sleep(30)
+                continue
+
+            customer_id = info.get("schwabClientCustomerId", "")
+            correl_id   = info.get("schwabClientCorrelId", "")
+            channel     = info.get("schwabClientChannel", "")
+            func_id     = info.get("schwabClientFunctionId", "")
+            ws_url      = info.get("streamerSocketUrl", SCHWAB_STREAM_URL)
+
+            async with websockets.connect(ws_url, ping_interval=20) as ws:
+                # LOGIN
+                await ws.send(json.dumps({
+                    "service": "ADMIN", "requestid": "0", "command": "LOGIN",
+                    "SchwabClientCustomerId": customer_id,
+                    "SchwabClientCorrelId":   correl_id,
+                    "parameters": {
+                        "Authorization":          schwab_tokens["access_token"],
+                        "SchwabClientChannel":    channel,
+                        "SchwabClientFunctionId": func_id,
+                    }
+                }))
+                resp = json.loads(await ws.recv())
+                print(f"  Schwab login: {resp}")
+
+                # SUBSCRIBE TIMESALE_EQUITY + QUOTE
+                await ws.send(json.dumps({
+                    "service": "TIMESALE_EQUITY", "requestid": "1", "command": "SUBS",
+                    "SchwabClientCustomerId": customer_id,
+                    "SchwabClientCorrelId":   correl_id,
+                    "parameters": {"keys": "SPY", "fields": "0,1,2,3,4"}
+                }))
+                await ws.send(json.dumps({
+                    "service": "QUOTE", "requestid": "2", "command": "SUBS",
+                    "SchwabClientCustomerId": customer_id,
+                    "SchwabClientCorrelId":   correl_id,
+                    "parameters": {"keys": "SPY", "fields": "1,2"}  # bid, ask
+                }))
+                print("✓ Schwab SIP feed activo — 100% del mercado\n")
+                state["connected"] = True
+                state["mode"]      = "live"
+
+                async for raw in ws:
+                    try:
+                        msg = json.loads(raw)
+                        for block in msg.get("data", []):
+                            svc = block.get("service", "")
+                            for c in block.get("content", []):
+                                if svc == "TIMESALE_EQUITY":
+                                    process_schwab_trade(c)
+                                elif svc == "QUOTE":
+                                    bp = c.get("1", 0)
+                                    ap = c.get("2", 0)
+                                    bid, ask = clean_bid_ask(state["spy_price"], bp, ap)
+                                    if bid and ask:
+                                        state["spy_bid"] = bid
+                                        state["spy_ask"] = ask
+                    except Exception as e:
+                        print(f"  Schwab parse error: {e}")
+
+        except Exception as e:
+            print(f"  Schwab WS error: {e} — reintentando en 15s")
+            state["connected"] = False
+            state["mode"]      = "reconectando"
+            await asyncio.sleep(15)
+
+
 # ── MAIN ──
 if __name__ == "__main__":
     print("=" * 50)
@@ -944,9 +1195,17 @@ if __name__ == "__main__":
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
     threading.Thread(target=flow_decay_watcher, daemon=True).start()
 
-    print("✓ Servidor listo — abre http://localhost:8765 en Chrome\n")
+    if schwab_tokens["access_token"] or schwab_tokens["refresh_token"]:
+        print("✓ Schwab configurado — usando SIP feed (100% del mercado)")
+    else:
+        print("✓ Usando Alpaca IEX feed (~2-3% del mercado)")
+        print(f"  Para activar Schwab visita: /schwab/auth")
+    print()
 
     try:
-        asyncio.run(stream())
+        if schwab_tokens["access_token"] or schwab_tokens["refresh_token"]:
+            asyncio.run(schwab_stream())
+        else:
+            asyncio.run(stream())
     except KeyboardInterrupt:
         print("\nServidor detenido.")
