@@ -1022,70 +1022,44 @@ async def schwab_stream():
                     await asyncio.sleep(30)
                     continue
 
-                # SUBSCRIBE — enviar todas las suscripciones y procesar respuestas en el loop
+                # SUBSCRIBE — solo LEVELONE_EQUITIES (TIMESALE y QUOTE no tienen permiso)
+                # Campos: 0=symbol 1=bid 2=ask 3=lastPrice 4=bidSize 5=askSize 8=totalVol 9=lastSize
                 await ws.send(json.dumps({
-                    "service": "TIMESALE_EQUITY", "requestid": "1", "command": "SUBS",
+                    "service": "LEVELONE_EQUITIES", "requestid": "1", "command": "SUBS",
                     "SchwabClientCustomerId": customer_id,
                     "SchwabClientCorrelId":   correl_id,
-                    "parameters": {"keys": "SPY", "fields": "0,1,2,3,4"}
-                }))
-                await ws.send(json.dumps({
-                    "service": "QUOTE", "requestid": "2", "command": "SUBS",
-                    "SchwabClientCustomerId": customer_id,
-                    "SchwabClientCorrelId":   correl_id,
-                    "parameters": {"keys": "SPY", "fields": "1,2"}
+                    "parameters": {"keys": "SPY", "fields": "0,1,2,3,4,5,8,9,12,13,17"}
                 }))
 
-                print("✓ Schwab SIP feed activo — 100% del mercado\n")
+                print("✓ Schwab LEVELONE_EQUITIES activo\n")
                 state["connected"] = True
                 state["mode"]      = "live"
 
-                timesale_ok = False
-                msg_count   = 0
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
-                        msg_count += 1
 
-                        # Log primeros mensajes y respuestas de suscripción
                         for block in msg.get("response", []):
                             svc  = block.get("service", "")
                             code = block.get("content", {}).get("code", -1)
                             print(f"  Schwab SUBS resp [{svc}] code={code}")
-                            if svc == "TIMESALE_EQUITY" and code == 0:
-                                timesale_ok = True
-                            elif svc == "TIMESALE_EQUITY" and code != 0:
-                                # Fallback a LEVELONE_EQUITIES si TIMESALE rechazado
-                                print("  TIMESALE_EQUITY rechazado — suscribiendo LEVELONE_EQUITIES")
-                                await ws.send(json.dumps({
-                                    "service": "LEVELONE_EQUITIES", "requestid": "3", "command": "SUBS",
-                                    "SchwabClientCustomerId": customer_id,
-                                    "SchwabClientCorrelId":   correl_id,
-                                    "parameters": {"keys": "SPY", "fields": "0,3,9,12,13"}
-                                }))
 
-                        # Datos en tiempo real
                         for block in msg.get("data", []):
-                            svc = block.get("service", "")
+                            if block.get("service") != "LEVELONE_EQUITIES":
+                                continue
                             for c in block.get("content", []):
-                                if svc == "TIMESALE_EQUITY":
-                                    process_schwab_trade(c)
-                                elif svc == "LEVELONE_EQUITIES":
-                                    p = float(c.get("3", 0))   # Last Price
-                                    s = int(float(c.get("9", 0)))  # Last Size
-                                    if p > 0 and s > 0:
-                                        process_schwab_trade({"2": p, "3": s})
-                                elif svc == "QUOTE":
-                                    bp = c.get("1", 0)
-                                    ap = c.get("2", 0)
-                                    bid, ask = clean_bid_ask(state["spy_price"], bp, ap)
-                                    if bid and ask:
-                                        state["spy_bid"] = bid
-                                        state["spy_ask"] = ask
-
-                        # Log diagnóstico si no llegan trades en los primeros 30 msgs
-                        if msg_count == 30 and not timesale_ok:
-                            print(f"  [DIAG] 30 msgs sin TIMESALE_EQUITY — servicios vistos hasta ahora en data: revisar logs")
+                                # Actualizar bid/ask
+                                bp = c.get("1", 0)
+                                ap = c.get("2", 0)
+                                bid, ask = clean_bid_ask(state["spy_price"], bp, ap)
+                                if bid and ask:
+                                    state["spy_bid"] = bid
+                                    state["spy_ask"] = ask
+                                # Procesar trade si hay lastPrice + lastSize
+                                p = float(c.get("3", 0))
+                                s = int(float(c.get("9", 0)))
+                                if p > 0 and s > 0:
+                                    process_schwab_trade({"2": p, "3": s})
 
                     except Exception as e:
                         print(f"  Schwab parse error: {e}")
