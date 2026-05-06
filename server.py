@@ -706,7 +706,7 @@ def fetch_pcr():
             print(f"  PCR: {ratio} (calls={int(calls):,} puts={int(puts):,}) [{date_str}]")
         except Exception as e:
             print(f"  PCR error: {e}")
-        time.sleep(3600)  # cada hora
+        time.sleep(300)  # cada 5 min
 
 
 # ── RESET FLOW AL ABRIR MERCADO ──

@@ -654,7 +654,7 @@ async function fetchPCR() {
     document.getElementById('pcrRatio').className = ratio >= 1.0 ? 'text-sm font-black text-red-400' : ratio <= 0.7 ? 'text-sm font-black text-green-400' : 'text-sm font-black text-yellow-500';
   } catch {}
 }
-fetchPCR(); setInterval(fetchPCR, 3600000);
+fetchPCR(); setInterval(fetchPCR, 300000);
 
 // ── MOBILE MODE ──
 let mobileMode=localStorage.getItem('mobileMode')==='1';
