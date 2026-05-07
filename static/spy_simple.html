@@ -251,19 +251,48 @@
       <div id="tsList" class="flex-1 overflow-y-auto font-mono text-xs"></div>
     </div>
 
-    <!-- ANÁLISIS (col 2, row 2) -->
+    <!-- ZONE STATUS (col 2, row 2) -->
     <div id="panelAnalisis" class="m-panel rounded-2xl border border-gray-800/60 flex flex-col overflow-hidden" style="background:rgba(15,15,20,.7);">
       <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-900">
-        <h2 class="text-xs font-bold text-white uppercase tracking-widest">Análisis de Zonas</h2>
-        <span id="alertBadge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full bg-green-500 text-black">0</span>
-        <button onclick="clearFeed()" class="ml-auto text-xs px-3 py-1 border border-gray-800 rounded text-white hover:border-gray-600 hover:text-white transition-colors">Limpiar</button>
+        <h2 class="text-xs font-bold text-white uppercase tracking-widest">Zone Status</h2>
       </div>
-      <div id="feed" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        <div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-white py-12">
-          <div class="text-4xl opacity-30">◎</div>
-          <p class="text-sm leading-relaxed">Monitoreando precio...<br/>Cuando llegue a una zona clave, Claude analiza el flujo.</p>
-          <p class="text-xs text-white">PREV HIGH · PREV LOW · PM HIGH · PM LOW · OI CALL · OI PUT</p>
+      <div class="flex-1 flex flex-col p-5 gap-4">
+
+        <!-- Status principal -->
+        <div id="zsCard" class="rounded-2xl p-5 flex flex-col gap-2 transition-all" style="background:#0d0d12;border:1px solid #1f2937;">
+          <p id="zsLabel" class="text-xs font-bold tracking-widest" style="color:#4b5563;">ZONE STATUS</p>
+          <p id="zsStatus" class="text-2xl font-black text-white leading-tight">NO ZONE</p>
+          <p id="zsDesc" class="text-sm font-medium" style="color:#6b7280;">Sin setup activo</p>
         </div>
+
+        <!-- Zona tocada -->
+        <div id="zsLevelWrap" class="rounded-xl px-4 py-3 flex items-center justify-between" style="background:#080810;border:1px solid #111827;display:none!important;">
+          <div>
+            <p class="text-xs font-bold text-white" style="letter-spacing:.06em;" id="zsLevelTag">—</p>
+            <p class="text-base font-bold text-white" id="zsLevelPrice">—</p>
+          </div>
+          <div id="zsLevelDist" class="text-xs font-semibold" style="color:#6b7280;">—</div>
+        </div>
+
+        <!-- Flow context -->
+        <div class="flex gap-3">
+          <div class="flex-1 rounded-xl px-4 py-3 flex flex-col gap-1" style="background:#080810;border:1px solid #111827;">
+            <p class="text-xs font-bold" style="color:#4b5563;letter-spacing:.06em;">FLUJO</p>
+            <p id="zsFlow" class="text-sm font-black text-white">—</p>
+          </div>
+          <div class="flex-1 rounded-xl px-4 py-3 flex flex-col gap-1" style="background:#080810;border:1px solid #111827;">
+            <p class="text-xs font-bold" style="color:#4b5563;letter-spacing:.06em;">DISTANCIA</p>
+            <p id="zsDistVal" class="text-sm font-black text-white">—</p>
+          </div>
+        </div>
+
+        <!-- Historial de zona tocada -->
+        <div>
+          <p class="text-xs font-bold mb-2" style="color:#4b5563;letter-spacing:.06em;">HISTORIAL</p>
+          <div id="zsHistory" class="flex flex-col gap-1.5"></div>
+          <p id="zsHistoryEmpty" class="text-xs" style="color:#374151;">Sin eventos aún</p>
+        </div>
+
       </div>
     </div>
 
@@ -279,7 +308,7 @@ let price=529.14, prevPrice=529.14, prevClose=527.90;
 let LEVELS=[], flow={buy_vol:0,sell_vol:0,delta:0,big_trades:0,w_buy_vol:0,w_sell_vol:0,w_delta:0,decay_delta:0,pm_buy_vol:0,pm_sell_vol:0,pm_delta:0};
 let serverOk=false;
 const COOLDOWN_MS = 60*1000;
-let levelCooldowns={}, alertCount=0, tsIndex=0;
+let levelCooldowns={}, tsIndex=0;
 
 // ── CLOCK ──
 function updateClock() {
@@ -587,139 +616,123 @@ function editLevelPrice(id,cur,el) {
   fetch(`${API}/levels/set_price`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,price:p})}).catch(()=>{});
 }
 
-// ── ZONE CHECK ──
+// ── ZONE STATUS ──
+let zsHistoryList = [];
+
 function checkZones() {
-  const m=new Date().getHours()*60+new Date().getMinutes();
-  if (m<570||m>=960) return; // solo durante mercado abierto (9:30–16:00 ET)
-  const now=Date.now();
-  for (const l of LEVELS) {
-    if (Math.abs(price-l.price)<=TZONE) {
-      const last=levelCooldowns[l.id]||0;
-      if (now-last<COOLDOWN_MS) continue;
-      levelCooldowns[l.id]=now; fireAlert(l); break;
-    }
+  if (!LEVELS.length) return;
+  const buy  = flow.w_buy_vol  || flow.buy_vol  || 0;
+  const sell = flow.w_sell_vol || flow.sell_vol || 0;
+  const total = buy + sell;
+  const buyPct = total > 0 ? buy / total * 100 : 50;
+
+  // Nivel más cercano
+  const sorted = [...LEVELS].filter(l => l.price > 0).sort((a,b) => Math.abs(price-a.price) - Math.abs(price-b.price));
+  if (!sorted.length) return;
+  const nearest = sorted[0];
+  const dist = Math.abs(price - nearest.price);
+  const inZone = dist <= TZONE;
+
+  const card   = document.getElementById('zsCard');
+  const status = document.getElementById('zsStatus');
+  const desc   = document.getElementById('zsDesc');
+  const label  = document.getElementById('zsLabel');
+  const lvlWrap = document.getElementById('zsLevelWrap');
+  const zsFlow  = document.getElementById('zsFlow');
+  const zsDist  = document.getElementById('zsDistVal');
+
+  // Distancia al nivel más cercano
+  zsDist.textContent = `$${dist.toFixed(2)}`;
+
+  // Flow label
+  if (total > 0) {
+    zsFlow.textContent  = buyPct >= 55 ? `BUY ${Math.round(buyPct)}%` : buyPct <= 45 ? `SELL ${Math.round(100-buyPct)}%` : `NEUTRO`;
+    zsFlow.style.color  = buyPct >= 55 ? '#22c55e' : buyPct <= 45 ? '#ef4444' : '#f59e0b';
+  } else {
+    zsFlow.textContent = '—'; zsFlow.style.color = '#6b7280';
   }
+
+  if (inZone) {
+    // Nivel activo
+    lvlWrap.style.removeProperty('display');
+    document.getElementById('zsLevelTag').textContent   = nearest.tag;
+    document.getElementById('zsLevelPrice').textContent = `$${nearest.price.toFixed(2)}`;
+
+    if (buyPct >= 55) {
+      card.style.background   = 'rgba(5,25,12,.9)';
+      card.style.borderColor  = 'rgba(34,197,94,.3)';
+      label.style.color       = '#22c55e';
+      status.textContent      = 'PRESIÓN ALCISTA';
+      status.style.color      = '#22c55e';
+      desc.textContent        = 'Compradores dominan en nivel clave';
+      desc.style.color        = '#4ade80';
+      addZsHistory(nearest.tag, nearest.price, 'alcista', buyPct);
+    } else if (buyPct <= 45) {
+      card.style.background   = 'rgba(25,5,5,.9)';
+      card.style.borderColor  = 'rgba(239,68,68,.3)';
+      label.style.color       = '#ef4444';
+      status.textContent      = 'POSIBLE RECHAZO';
+      status.style.color      = '#ef4444';
+      desc.textContent        = 'Vendedores dominan en nivel clave';
+      desc.style.color        = '#f87171';
+      addZsHistory(nearest.tag, nearest.price, 'rechazo', 100-buyPct);
+    } else {
+      card.style.background   = 'rgba(15,12,0,.9)';
+      card.style.borderColor  = 'rgba(245,158,11,.25)';
+      label.style.color       = '#f59e0b';
+      status.textContent      = 'INDECISIÓN';
+      status.style.color      = '#f59e0b';
+      desc.textContent        = 'Flujo equilibrado en nivel clave';
+      desc.style.color        = '#fbbf24';
+    }
+  } else {
+    lvlWrap.style.display = 'none';
+    card.style.background   = '#0d0d12';
+    card.style.borderColor  = '#1f2937';
+    label.style.color       = '#4b5563';
+    status.textContent      = 'NO ZONE';
+    status.style.color      = '#f1f5f9';
+    desc.textContent        = `Nivel más cercano: ${nearest.tag} ($${dist.toFixed(2)} de distancia)`;
+    desc.style.color        = '#6b7280';
+  }
+}
+
+let _zsLastEvent = '';
+function addZsHistory(tag, lvlPrice, type, pct) {
+  const key = `${tag}-${type}`;
+  if (key === _zsLastEvent) return;
+  _zsLastEvent = key;
+  const time = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const isBull = type === 'alcista';
+  zsHistoryList.unshift({ tag, lvlPrice, type, pct: Math.round(pct), time });
+  if (zsHistoryList.length > 8) zsHistoryList.pop();
+  renderZsHistory();
+}
+
+function renderZsHistory() {
+  const el = document.getElementById('zsHistory');
+  const empty = document.getElementById('zsHistoryEmpty');
+  if (!zsHistoryList.length) { el.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+  el.innerHTML = zsHistoryList.map(e => {
+    const isBull = e.type === 'alcista';
+    const color  = isBull ? '#22c55e' : e.type === 'rechazo' ? '#ef4444' : '#f59e0b';
+    const icon   = isBull ? '▲' : e.type === 'rechazo' ? '▼' : '↔';
+    const label  = isBull ? 'Presión alcista' : e.type === 'rechazo' ? 'Posible rechazo' : 'Indecisión';
+    return `<div class="flex items-center gap-2 px-3 py-2 rounded-lg" style="background:#080810;border:1px solid #111827;">
+      <span style="color:${color};font-size:11px;font-weight:900;">${icon}</span>
+      <span style="font-size:11px;font-weight:700;color:${color};">${label}</span>
+      <span style="font-size:11px;color:#6b7280;flex:1;">${e.tag} $${e.lvlPrice.toFixed(2)}</span>
+      <span style="font-size:10px;color:#374151;">${e.time}</span>
+    </div>`;
+  }).join('');
 }
 
 function simulateHit() {
   if (!LEVELS.length) return;
-  const l=LEVELS[Math.floor(Math.random()*LEVELS.length)];
-  price=l.price+(Math.random()-.5)*.06; renderLevels(); fireAlert(l);
-}
-
-// ── ALERT CARD ──
-async function fireAlert(lvl) {
-  document.getElementById('emptyState')?.remove();
-  alertCount++;
-  const badge=document.getElementById('alertBadge');
-  badge.classList.remove('hidden'); badge.textContent=alertCount;
-
-  let snap={...flow};
-  try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
-
-  const now=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-  const card=document.createElement('div');
-  card.className='rounded-xl border border-gray-800 overflow-hidden fade-in';
-  card.style.background='rgba(10,10,14,.8)';
-  card.innerHTML=`
-    <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-800/50">
-      <span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-800 text-white">Analizando...</span>
-      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
-      <span class="text-xs text-white">${now}</span>
-    </div>
-    <div class="px-4 py-3 flex items-center gap-2 text-xs text-white">
-      Analizando con Claude
-      <span class="flex gap-1 ml-1">
-        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:0s"></i>
-        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:.2s"></i>
-        <i class="inline-block w-1.5 h-1.5 rounded-full bg-gray-600 animate-bounce" style="animation-delay:.4s"></i>
-      </span>
-    </div>`;
-  document.getElementById('feed').prepend(card);
-
-  // Trades cerca del nivel (precio ±0.80) en los últimos 10 min — análisis de zona
-  const nowMs = Date.now();
-  const zoneTrades = tsBuffer.filter(t =>
-    Math.abs((t.price||0) - lvl.price) <= 0.80
-  ).slice(-200);
-  // Todos los trades de sesión para contexto global
-  const allTrades = tsBuffer.slice();
-  try { const r=await fetch(`${API}/flow`,{signal:AbortSignal.timeout(1000)}); snap=await r.json(); } catch {}
-
-  try {
-    const res=await fetch(`${API}/analyze`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({lvl_tag:lvl.tag,lvl_type:lvl.type,lvl_price:lvl.price,lvl_desc:lvl.desc,spy_price:price,buy_vol:snap.buy_vol||0,sell_vol:snap.sell_vol||0,mode:serverOk?'live':'sim',trades:zoneTrades,all_trades:allTrades})
-    });
-    const data=await res.json();
-    const text=data.content?.map(b=>b.text||'').join('')||'';
-    const get=(k,n)=>(text.match(new RegExp(k+':\\s*([\\s\\S]*?)(?='+(n||'ZZZZ')+':|$)','i'))||[])[1]?.trim()||'';
-    const decisionRaw=get('DECISION','PATRON').toUpperCase();
-    const decision=decisionRaw.includes('COMPRA')&&!decisionRaw.includes('NO')?'COMPRA':decisionRaw.includes('VENTA')?'VENTA':'NO TRADE';
-    const patron=get('PATRON','LECTURA');
-    fillCard(card,lvl,decision,get('LECTURA','ANALISIS'),get('ANALISIS',null),snap,now,zoneTrades.length,patron);
-  } catch(e) { fillCard(card,lvl,'NO TRADE','Error: '+(e.message||'').slice(0,40),'',snap,now,0,''); }
-
-  while (document.getElementById('feed').children.length>20) document.getElementById('feed').removeChild(document.getElementById('feed').lastChild);
-}
-
-function fmt(t) {
-  return (t||'')
-    .replace(/compras agresivas/gi,'<span class="text-green-400 font-semibold">$&</span>')
-    .replace(/ventas agresivas/gi,'<span class="text-red-400 font-semibold">$&</span>')
-    .replace(/sin convicción/gi,'<span class="text-yellow-500 font-semibold">$&</span>')
-    .replace(/absorci[oó]n/gi,'<span class="text-purple-400 font-semibold">$&</span>')
-    .replace(/agotamiento/gi,'<span class="text-orange-400 font-semibold">$&</span>')
-    .replace(/aceleraci[oó]n/gi,'<span class="text-cyan-400 font-semibold">$&</span>')
-    .replace(/\b(compras absorbidas|ventas absorbidas)\b/gi,'<span class="text-purple-400 font-semibold">$&</span>');
-}
-
-function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron,isAuto=false) {
-  const isBuy=decision==='COMPRA', isSell=decision==='VENTA';
-  const accent=isBuy?'#22c55e':isSell?'#ef4444':'#f59e0b';
-  const bg=isBuy?'rgba(5,25,12,.9)':isSell?'rgba(25,5,5,.9)':'rgba(15,12,0,.9)';
-  const borderColor=isBuy?'rgba(34,197,94,.25)':isSell?'rgba(239,68,68,.25)':'rgba(245,158,11,.25)';
-  const pillBg=isBuy?'rgba(5,40,20,.8)':isSell?'rgba(40,5,5,.8)':'rgba(30,20,0,.8)';
-  const pillTxt=isBuy?'▲ Compra':isSell?'▼ Venta':'↔ Sin confirmación';
-  const icon=isBuy?'▲':isSell?'▼':'—';
-  const buy=snap.buy_vol||0, sell=snap.sell_vol||0, tc=tradeCount!=null?tradeCount:'—';
-
-  // Badge de patrón con color según tipo
-  let patronBadge='';
-  if (patron) {
-    const p=patron.toLowerCase();
-    const pColor=p.includes('absorci')?'#a855f7':p.includes('agotamiento')?'#f97316':p.includes('aceleraci')?'#06b6d4':'#6b7280';
-    const pBg=p.includes('absorci')?'rgba(88,28,135,.3)':p.includes('agotamiento')?'rgba(124,45,18,.3)':p.includes('aceleraci')?'rgba(8,51,68,.3)':'rgba(30,30,30,.4)';
-    patronBadge=`<span class="text-xs px-2 py-0.5 rounded-full border font-semibold" style="color:${pColor};background:${pBg};border-color:${pColor}40">◆ ${patron}</span>`;
-  }
-
-  card.style.background=bg; card.style.borderColor=borderColor;
-  const autoBadge = isAuto ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid #22c55e33;margin-left:4px;">⚡ AUTO</span>` : '';
-  card.innerHTML=`
-    <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color:${borderColor}">
-      <span class="text-xs font-bold px-2 py-1 rounded-full" style="background:${pillBg};color:${accent}">${pillTxt}</span>
-      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}${autoBadge}</span>
-      <span class="text-xs text-white">${time}</span>
-    </div>
-    <div class="px-4 py-4">
-      <div class="flex items-center gap-3 rounded-xl p-3 mb-3" style="background:rgba(0,0,0,.4);border:1px solid ${borderColor}">
-        <span class="text-3xl font-black" style="color:${accent}">${icon} ${decision}</span>
-        ${lectura?`<span class="text-xs text-white leading-relaxed flex-1">${fmt(lectura)}</span>`:''}
-      </div>
-      ${patronBadge?`<div class="mb-2">${patronBadge}</div>`:''}
-      ${analisis?`<p class="text-xs text-white leading-relaxed mb-3">${fmt(analisis)}</p>`:''}
-      <div class="flex gap-2 flex-wrap">
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Compradores <span class="text-green-400 font-semibold ml-1">${buy.toLocaleString()}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Vendedores <span class="text-red-400 font-semibold ml-1">${sell.toLocaleString()}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">SPY <span class="text-white font-semibold ml-1">$${price.toFixed(2)}</span></span>
-        <span class="text-xs px-2 py-1 rounded bg-black/40 border border-gray-800 text-white">Trades <span class="text-yellow-500 font-semibold ml-1">${tc}</span></span>
-      </div>
-    </div>`;
-}
-
-function clearFeed() {
-  document.getElementById('feed').innerHTML=`<div id="emptyState" class="flex-1 flex flex-col items-center justify-center gap-3 text-center text-white py-12"><div class="text-4xl opacity-30">◎</div><p class="text-sm">Monitor limpiado — esperando zonas.</p></div>`;
-  alertCount=0; document.getElementById('alertBadge').classList.add('hidden');
+  const l = LEVELS[Math.floor(Math.random()*LEVELS.length)];
+  price = l.price + (Math.random()-.5)*.06;
+  renderLevels(); checkZones();
 }
 
 // ── POLL ──
@@ -822,26 +835,9 @@ function handleAutoAnalysis(d) {
   if (d.claude_last_ts <= lastClaudeTs) return;
   lastClaudeTs = d.claude_last_ts;
   if (!d.claude_analysis) return;
-  const zone = d.claude_zone || '—';
-  const price = d.claude_level_price ? `$${d.claude_level_price.toFixed(2)}` : '';
-  showAutoToast(`${zone} ${price}`);
-  // Create analysis card in feed
-  const text = d.claude_analysis;
-  const get = (k, n) => (text.match(new RegExp(k+':\\s*([\\s\\S]*?)(?='+(n||'ZZZZ')+':|$)','i'))||[])[1]?.trim()||'';
-  const decisionRaw = get('DECISION','PATRON').toUpperCase();
-  const decision = decisionRaw.includes('COMPRA')&&!decisionRaw.includes('NO')?'COMPRA':decisionRaw.includes('VENTA')?'VENTA':'NO TRADE';
-  const lvl = { tag: zone, price: d.claude_level_price||0, type: '', desc: d.claude_level_desc||'' };
-  const snap = { buy_vol: d.buy_vol||0, sell_vol: d.sell_vol||0 };
-  const now = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-  document.getElementById('emptyState')?.remove();
-  alertCount++;
-  const badge = document.getElementById('alertBadge');
-  badge.classList.remove('hidden'); badge.textContent = alertCount;
-  const card = document.createElement('div');
-  card.className = 'rounded-xl border border-gray-800 overflow-hidden fade-in';
-  document.getElementById('feed').prepend(card);
-  fillCard(card, lvl, decision, get('LECTURA','ANALISIS'), get('ANALISIS',null), snap, now, null, get('PATRON','LECTURA'), true);
-  while (document.getElementById('feed').children.length > 20) document.getElementById('feed').removeChild(document.getElementById('feed').lastChild);
+  const zone  = d.claude_zone || '—';
+  const p     = d.claude_level_price ? `$${d.claude_level_price.toFixed(2)}` : '';
+  showAutoToast(`${zone} ${p} — Claude analizó`);
 }
 
 // ── FEED HEALTH DOT ──
