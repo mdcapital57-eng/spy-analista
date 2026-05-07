@@ -143,10 +143,20 @@
           <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">MOTOR IA — CLAUDE</p>
           <div class="adm-row"><span class="adm-label">Estado</span><span id="adm-ai" class="adm-val">—</span></div>
           <div class="adm-row"><span class="adm-label">Zona activa</span><span id="adm-zone" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Tipo</span><span id="adm-aitype" class="adm-val">—</span></div>
           <div class="adm-row"><span class="adm-label">Último análisis</span><span id="adm-ailast" class="adm-val">—</span></div>
+          <div id="adm-analysis-wrap" style="display:none;margin-top:10px;padding:10px;background:#0f0f1a;border-radius:8px;border:1px solid #1f2937;">
+            <p id="adm-analysis-text" style="font-size:11px;color:#cbd5e1;line-height:1.6;white-space:pre-wrap;"></p>
+          </div>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- AUTO-ANALYZE TOAST -->
+  <div id="autoToast" style="display:none;position:fixed;top:60px;right:16px;z-index:1000;background:#0d1117;border:1px solid #22c55e44;border-radius:12px;padding:10px 16px;max-width:280px;box-shadow:0 8px 32px rgba(0,0,0,.6);">
+    <p style="font-size:10px;font-weight:700;color:#22c55e;letter-spacing:.08em;margin-bottom:2px;">⚡ AUTO-ANÁLISIS</p>
+    <p id="autoToastText" style="font-size:12px;color:#f1f5f9;font-weight:600;">—</p>
   </div>
 
   <!-- BANNERS -->
@@ -664,7 +674,7 @@ function fmt(t) {
     .replace(/\b(compras absorbidas|ventas absorbidas)\b/gi,'<span class="text-purple-400 font-semibold">$&</span>');
 }
 
-function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron) {
+function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron,isAuto=false) {
   const isBuy=decision==='COMPRA', isSell=decision==='VENTA';
   const accent=isBuy?'#22c55e':isSell?'#ef4444':'#f59e0b';
   const bg=isBuy?'rgba(5,25,12,.9)':isSell?'rgba(25,5,5,.9)':'rgba(15,12,0,.9)';
@@ -684,10 +694,11 @@ function fillCard(card,lvl,decision,lectura,analisis,snap,time,tradeCount,patron
   }
 
   card.style.background=bg; card.style.borderColor=borderColor;
+  const autoBadge = isAuto ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid #22c55e33;margin-left:4px;">⚡ AUTO</span>` : '';
   card.innerHTML=`
     <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color:${borderColor}">
       <span class="text-xs font-bold px-2 py-1 rounded-full" style="background:${pillBg};color:${accent}">${pillTxt}</span>
-      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}</span>
+      <span class="text-sm font-semibold text-white flex-1">${lvl.tag} — $${lvl.price.toFixed(2)}${autoBadge}</span>
       <span class="text-xs text-white">${time}</span>
     </div>
     <div class="px-4 py-4">
@@ -792,6 +803,46 @@ function setTab(tab){
   document.getElementById('tab-'+tab)?.classList.add('tab-active');
 }
 if(mobileMode)applyMobileMode();
+
+// ── AUTO-ANALYZE TRACKING ──
+let lastClaudeTs = 0, autoToastTimer = null;
+function showAutoToast(text) {
+  document.getElementById('autoToastText').textContent = text;
+  const t = document.getElementById('autoToast');
+  t.style.display = 'block'; t.style.opacity = '1';
+  clearTimeout(autoToastTimer);
+  autoToastTimer = setTimeout(() => {
+    t.style.transition = 'opacity .6s'; t.style.opacity = '0';
+    setTimeout(() => { t.style.display = 'none'; t.style.transition = ''; }, 600);
+  }, 6000);
+}
+
+function handleAutoAnalysis(d) {
+  if (!d.claude_auto || !d.claude_last_ts) return;
+  if (d.claude_last_ts <= lastClaudeTs) return;
+  lastClaudeTs = d.claude_last_ts;
+  if (!d.claude_analysis) return;
+  const zone = d.claude_zone || '—';
+  const price = d.claude_level_price ? `$${d.claude_level_price.toFixed(2)}` : '';
+  showAutoToast(`${zone} ${price}`);
+  // Create analysis card in feed
+  const text = d.claude_analysis;
+  const get = (k, n) => (text.match(new RegExp(k+':\\s*([\\s\\S]*?)(?='+(n||'ZZZZ')+':|$)','i'))||[])[1]?.trim()||'';
+  const decisionRaw = get('DECISION','PATRON').toUpperCase();
+  const decision = decisionRaw.includes('COMPRA')&&!decisionRaw.includes('NO')?'COMPRA':decisionRaw.includes('VENTA')?'VENTA':'NO TRADE';
+  const lvl = { tag: zone, price: d.claude_level_price||0, type: '', desc: d.claude_level_desc||'' };
+  const snap = { buy_vol: d.buy_vol||0, sell_vol: d.sell_vol||0 };
+  const now = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  document.getElementById('emptyState')?.remove();
+  alertCount++;
+  const badge = document.getElementById('alertBadge');
+  badge.classList.remove('hidden'); badge.textContent = alertCount;
+  const card = document.createElement('div');
+  card.className = 'rounded-xl border border-gray-800 overflow-hidden fade-in';
+  document.getElementById('feed').prepend(card);
+  fillCard(card, lvl, decision, get('LECTURA','ANALISIS'), get('ANALISIS',null), snap, now, null, get('PATRON','LECTURA'), true);
+  while (document.getElementById('feed').children.length > 20) document.getElementById('feed').removeChild(document.getElementById('feed').lastChild);
+}
 
 // ── FEED HEALTH DOT ──
 let lastTradeTs = 0;
@@ -918,8 +969,17 @@ async function fetchAdminStats() {
     if (st==='analyzing') { aiEl.textContent='⚡ ANALIZANDO'; aiEl.style.color='#f59e0b'; }
     else { aiEl.textContent='● EN ESPERA'; aiEl.style.color='#6b7280'; }
     document.getElementById('adm-zone').textContent = d.claude_zone || '—';
+    const typeEl = document.getElementById('adm-aitype');
+    if (d.claude_auto) { typeEl.textContent='AUTO ⚡'; typeEl.style.color='#22c55e'; }
+    else { typeEl.textContent='MANUAL'; typeEl.style.color='#6b7280'; }
     const cs = d.claude_secs_since;
     document.getElementById('adm-ailast').textContent = cs===null ? 'Sin análisis' : cs<60 ? `hace ${cs}s` : `hace ${Math.floor(cs/60)}m`;
+    const wrap = document.getElementById('adm-analysis-wrap');
+    const atxt = document.getElementById('adm-analysis-text');
+    if (d.claude_analysis) { wrap.style.display='block'; atxt.textContent=d.claude_analysis; }
+    else wrap.style.display='none';
+    // Detectar auto-análisis nuevo
+    if (d.claude_last_ts) handleAutoAnalysis(d);
   } catch {}
 }
 // Actualizar dot aunque el panel esté cerrado

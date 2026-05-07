@@ -149,11 +149,16 @@ state = {
     "mode":       "iniciando",
     "_flow_reset_date": None,
     "pcr": {"ratio": None, "calls": None, "puts": None, "date": None},
-    "_last_trade_ts":   0.0,
-    "_reconnect_count": 0,
-    "_claude_status":   "idle",
-    "_claude_zone":     "",
-    "_claude_last_ts":  0.0,
+    "_last_trade_ts":      0.0,
+    "_reconnect_count":   0,
+    "_claude_status":     "idle",
+    "_claude_zone":       "",
+    "_claude_last_ts":    0.0,
+    "_claude_analysis":   "",
+    "_claude_auto":       False,
+    "_claude_level_price":0.0,
+    "_claude_level_desc": "",
+    "_auto_cooldowns":    {},
 }
 
 MAX_TS = 300
@@ -398,10 +403,14 @@ def admin_stats():
         "absorption":       absorption,
         "control_change":   control_change,
         "signal_state":     signal_state,
-        "claude_status":    state["_claude_status"],
-        "claude_zone":      state["_claude_zone"],
-        "claude_secs_since":claude_since,
-        "spy_price":        state["spy_price"],
+        "claude_status":      state["_claude_status"],
+        "claude_zone":        state["_claude_zone"],
+        "claude_secs_since":  claude_since,
+        "claude_analysis":    state["_claude_analysis"],
+        "claude_auto":        state["_claude_auto"],
+        "claude_level_price": state["_claude_level_price"],
+        "claude_last_ts":     state["_claude_last_ts"],
+        "spy_price":          state["spy_price"],
         "spy_bid":          state["spy_bid"],
         "spy_ask":          state["spy_ask"],
         "et_time":          get_et_now().strftime("%H:%M:%S"),
@@ -493,8 +502,11 @@ def analyze():
     data = request.get_json() or {}
     if not CLAUDE_API_KEY:
         return jsonify({"error": "sin_key"}), 500
-    state["_claude_status"] = "analyzing"
-    state["_claude_zone"]   = data.get("lvl_tag", "")
+    state["_claude_status"]      = "analyzing"
+    state["_claude_zone"]        = data.get("lvl_tag", "")
+    state["_claude_auto"]        = False
+    state["_claude_level_price"] = float(data.get("lvl_price", 0))
+    state["_claude_level_desc"]  = data.get("lvl_desc", "")
 
     lvl_tag   = data.get("lvl_tag", "")
     lvl_price = data.get("lvl_price", 0)
@@ -689,12 +701,223 @@ def analyze():
             },
             timeout=15
         )
-        state["_claude_status"]  = "idle"
-        state["_claude_last_ts"] = time.time()
-        return jsonify(res.json()), res.status_code
+        rjson = res.json()
+        text  = rjson.get("content", [{}])[0].get("text", "") if rjson.get("content") else ""
+        state["_claude_analysis"] = text
+        state["_claude_status"]   = "idle"
+        state["_claude_last_ts"]  = time.time()
+        return jsonify(rjson), res.status_code
     except Exception as e:
         state["_claude_status"] = "idle"
         return jsonify({"error": str(e)}), 500
+
+
+# ── AUTO-ANALYZE ──
+def calc_flow_quality():
+    recent = state["flow"]["_recent"]
+    now = time.time()
+    buy = state["flow"]["buy_vol"]
+    sell = state["flow"]["sell_vol"]
+    tt = buy + sell
+    dom_pct = max(buy, sell) / tt * 100 if tt > 0 else 50
+    p60 = sum(1 for ts, *_ in recent if now - ts <= 60)
+    block_total = state["flow"]["block_buy_vol"] + state["flow"]["block_sell_vol"]
+    consistency = min(100, (dom_pct - 50) * 4)
+    speed_score = min(100, p60 / 1.5)
+    vol_score = min(100, block_total / 5000 * 100) if tt > 0 else 0
+    return round(consistency * 0.4 + speed_score * 0.35 + vol_score * 0.25)
+
+
+def check_auto_analyze():
+    price = state["spy_price"]
+    if not price or state["_claude_status"] == "analyzing":
+        return
+    if calc_flow_quality() < 65:
+        return
+    levels = [
+        ("pdh", "PREV HIGH", "High día anterior", state["spy_prev_high"]),
+        ("pdl", "PREV LOW",  "Low día anterior",  state["spy_prev_low"]),
+        ("pmh", "PM HIGH",   "High premarket",    state["spy_pm_high"]),
+        ("pml", "PM LOW",    "Low premarket",     state["spy_pm_low"]),
+    ]
+    for oi in state["oi_levels"]:
+        levels.append((oi["id"], oi["tag"], oi["desc"], oi["price"]))
+    nearest = None
+    nearest_dist = 0.11
+    for lid, ltag, ldesc, lprice in levels:
+        if lprice <= 0:
+            continue
+        dist = abs(price - lprice)
+        if dist < nearest_dist:
+            nearest = (lid, ltag, ldesc, lprice)
+            nearest_dist = dist
+    if not nearest:
+        return
+    lid, ltag, ldesc, lprice = nearest
+    if time.time() - state["_auto_cooldowns"].get(lid, 0) < 300:
+        return
+    state["_auto_cooldowns"][lid] = time.time()
+    fq = calc_flow_quality()
+    print(f"  AUTO-ANALYZE trigger: {ltag} ${lprice:.2f} (FQ={fq}, dist={nearest_dist:.3f})")
+    threading.Thread(target=run_auto_analyze, args=(ltag, ldesc, lprice), daemon=True).start()
+
+
+def run_auto_analyze(ltag, ldesc, lprice):
+    if not CLAUDE_API_KEY:
+        return
+    state["_claude_status"]      = "analyzing"
+    state["_claude_zone"]        = ltag
+    state["_claude_auto"]        = True
+    state["_claude_level_price"] = lprice
+    state["_claude_level_desc"]  = ldesc
+
+    price    = state["spy_price"]
+    buy_vol  = state["flow"]["buy_vol"]
+    sell_vol = state["flow"]["sell_vol"]
+    mode     = state["mode"]
+    feed     = list(state["ts_feed"])
+
+    trades     = [t for t in feed if abs(t["price"] - lprice) <= 0.80][-150:]
+    all_trades = feed
+
+    total_vol = buy_vol + sell_vol
+    delta_pct = round((buy_vol - sell_vol) / total_vol * 100, 1) if total_vol > 0 else 0
+    buy_pct   = round(buy_vol / total_vol * 100, 1) if total_vol > 0 else 0
+    sell_pct  = 100 - buy_pct
+
+    zone_buys      = [t for t in trades if t.get("direction") == "BUY"]
+    zone_sells     = [t for t in trades if t.get("direction") == "SELL"]
+    zone_total     = len(trades)
+    zone_buy_vol   = sum(t.get("size", 0) for t in zone_buys)
+    zone_sell_vol  = sum(t.get("size", 0) for t in zone_sells)
+    zone_total_vol = zone_buy_vol + zone_sell_vol
+    zone_buy_pct   = round(zone_buy_vol / zone_total_vol * 100, 1) if zone_total_vol > 0 else 0
+    avg_size       = round(zone_total_vol / zone_total, 0) if zone_total > 0 else 0
+    blocks         = sum(1 for t in trades if t.get("big"))
+
+    velocity = 0.0
+    if len(trades) >= 2:
+        try:
+            def _hms(ts):
+                h, m, s = ts.split(":")
+                return int(h) * 3600 + int(m) * 60 + int(s)
+            dur = max(_hms(trades[-1]["time"]) - _hms(trades[0]["time"]), 1)
+            velocity = round(len(trades) / dur * 60, 1)
+        except Exception:
+            velocity = 0.0
+
+    buy_absorbed = sell_absorbed = 0
+    for i in range(len(trades) - 1):
+        tc, tn = trades[i], trades[i + 1]
+        if not tc.get("big"):
+            continue
+        dp = tn.get("price", tc.get("price", 0)) - tc.get("price", 0)
+        if tc["direction"] == "BUY"  and dp <= 0: buy_absorbed  += 1
+        if tc["direction"] == "SELL" and dp >= 0: sell_absorbed += 1
+    if buy_absorbed >= 2 and buy_absorbed > sell_absorbed:
+        absorption_text = f"compras absorbidas — {buy_absorbed} bloques BUY sin avance de precio"
+    elif sell_absorbed >= 2 and sell_absorbed > buy_absorbed:
+        absorption_text = f"ventas absorbidas — {sell_absorbed} bloques SELL sin caída de precio"
+    else:
+        absorption_text = "ninguna significativa"
+
+    dominant_dir = "BUY" if zone_buy_pct >= 50 else "SELL"
+    dom_trades   = [t for t in trades if t.get("direction") == dominant_dir]
+    exhaustion_text = "ninguno"
+    if len(dom_trades) >= 4:
+        mid   = len(dom_trades) // 2
+        avg_f = sum(t.get("size", 0) for t in dom_trades[:mid]) / mid
+        avg_s = sum(t.get("size", 0) for t in dom_trades[mid:]) / max(len(dom_trades) - mid, 1)
+        drop  = round((1 - avg_s / avg_f) * 100) if avg_f > 0 else 0
+        if avg_s < avg_f * 0.65:
+            dir_label = "compradores" if dominant_dir == "BUY" else "vendedores"
+            exhaustion_text = f"{dir_label} perdiendo fuerza — tamaño cayó {drop}%"
+
+    acceleration_text = "ninguna"
+    if len(trades) >= 6:
+        mid  = len(trades) // 2
+        fh   = trades[:mid]
+        sh   = trades[mid:]
+        af   = sum(t.get("size", 0) for t in fh) / len(fh)
+        as_  = sum(t.get("size", 0) for t in sh) / len(sh)
+        if as_ > af * 1.4:
+            inc  = round((as_ / af - 1) * 100)
+            dlbl = "alcista" if zone_buy_pct >= 50 else "bajista"
+            acceleration_text = f"aceleración {dlbl} — tamaño promedio subió {inc}%"
+
+    if zone_total < 3:
+        state["_claude_analysis"] = f"DECISION: NO TRADE\nLECTURA: Datos insuficientes en la zona ({zone_total} trades)"
+        state["_claude_status"]   = "idle"
+        state["_claude_last_ts"]  = time.time()
+        return
+
+    if all_trades:
+        s_buys = [t for t in all_trades if t.get("direction") == "BUY"]
+        s_bvol = sum(t.get("size", 0) for t in s_buys)
+        s_svol = sum(t.get("size", 0) for t in all_trades) - s_bvol
+        s_tot  = s_bvol + s_svol
+        s_bpct = round(s_bvol / s_tot * 100, 1) if s_tot > 0 else 0
+        s_blk  = sum(1 for t in all_trades if t.get("big"))
+        session_summary = (f"SESIÓN COMPLETA ({len(all_trades)} trades): "
+                           f"BUY {s_bvol:,} ({s_bpct}%) | SELL {s_svol:,} ({100-s_bpct:.1f}%) | Bloques grandes: {s_blk}")
+    else:
+        session_summary = "Sin datos de sesión."
+
+    lines = [f"  {t.get('time','')} | {t.get('direction','')} | {t.get('size',0):,} @ ${t.get('price',0):.2f}"
+             + (f" [{t.get('note')}]" if t.get("note") else "") for t in trades[-150:]]
+    trades_text = f"{session_summary}\n\nTRADES EN ZONA ({len(trades)} trades ±$0.80):\n" + "\n".join(lines)
+
+    try:
+        res = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json", "x-api-key": CLAUDE_API_KEY, "anthropic-version": "2023-06-01"},
+            json={
+                "model": "claude-haiku-4-5-20251001", "max_tokens": 350,
+                "system": (
+                    "Eres un analista de microestructura para SPY. Identificas patrones de flujo en zonas clave.\n\n"
+                    "PATRONES A DETECTAR:\n"
+                    "• ABSORCIÓN: Bloques grandes que no mueven el precio en su dirección → fuerza opuesta presente.\n"
+                    "  Compras absorbidas = vendedores fuertes arriba (señal VENTA)\n"
+                    "  Ventas absorbidas = compradores fuertes abajo (señal COMPRA)\n"
+                    "• AGOTAMIENTO: Tamaño promedio cae >35% en prints de dirección dominante → momentum debilitándose.\n"
+                    "• ACELERACIÓN: Tamaño promedio sube >40% en segunda mitad → momentum creciendo.\n"
+                    "• FLUJO DOMINANTE: >60% del volumen de zona en una sola dirección.\n\n"
+                    "REGLAS DE DECISIÓN — requiere ≥1 condición clara:\n"
+                    "COMPRA si ≥1: (a) flujo BUY zona ≥55%, (b) ventas absorbidas, (c) aceleración alcista, (d) agotamiento vendedor\n"
+                    "VENTA si ≥1: (a) flujo SELL zona ≥55%, (b) compras absorbidas, (c) aceleración bajista, (d) agotamiento comprador\n"
+                    "NO TRADE solo si: señales completamente contradictorias o datos insuficientes\n\n"
+                    "Responde SIEMPRE en este formato exacto (sin texto extra):\n"
+                    "DECISION: COMPRA | VENTA | NO TRADE\n"
+                    "PATRON: [absorción | agotamiento | aceleración | flujo dominante | sin patrón claro]\n"
+                    "LECTURA: [una frase directa, máximo 12 palabras]\n"
+                    "ANALISIS: [2-3 oraciones: qué patrón detectaste, qué condiciones se alinearon, por qué la decisión]"
+                ),
+                "messages": [{"role": "user", "content": (
+                    f"Nivel: {ltag} ${lprice:.2f} — {ldesc}\n"
+                    f"SPY: ${price:.2f} | {'LIVE Schwab SIP' if mode == 'live' else 'SIMULADO'}\n\n"
+                    f"FLUJO SESIÓN — BUY: {buy_pct}% ({buy_vol:,}) | SELL: {sell_pct}% ({sell_vol:,}) | Delta: {delta_pct:+.1f}%\n\n"
+                    f"FLUJO EN ZONA — {zone_total} trades a {velocity} trades/min\n"
+                    f"  BUY: {zone_buy_vol:,} ({zone_buy_pct}%) | SELL: {zone_sell_vol:,} ({100-zone_buy_pct:.1f}%)\n"
+                    f"  Tamaño promedio: {avg_size:.0f} acciones | Bloques grandes: {blocks}\n\n"
+                    f"MICROESTRUCTURA DETECTADA:\n"
+                    f"  Absorción:    {absorption_text}\n"
+                    f"  Agotamiento:  {exhaustion_text}\n"
+                    f"  Aceleración:  {acceleration_text}\n"
+                    f"  Velocidad:    {velocity} trades/min\n\n"
+                    f"{trades_text}"
+                )}]
+            },
+            timeout=15
+        )
+        data = res.json()
+        text = data.get("content", [{}])[0].get("text", "") if data.get("content") else ""
+        state["_claude_analysis"]  = text
+        state["_claude_status"]    = "idle"
+        state["_claude_last_ts"]   = time.time()
+        print(f"  AUTO-ANALYZE done: {ltag} → {text[:80]}...")
+    except Exception as e:
+        state["_claude_status"] = "idle"
+        print(f"  AUTO-ANALYZE error: {e}")
 
 
 # ── SCHWAB MARKET DATA HELPER ──
@@ -1095,6 +1318,7 @@ def process_schwab_trade(content):
                 state["spy_pm_high"] = round(p, 2)
             if state["spy_pm_low"] == 0 or p < state["spy_pm_low"]:
                 state["spy_pm_low"] = round(p, 2)
+        check_auto_analyze()
     except Exception as e:
         print(f"  Schwab trade error: {e}")
 
