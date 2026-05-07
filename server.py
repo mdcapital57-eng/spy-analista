@@ -285,41 +285,127 @@ def flow():
     f = {k: v for k, v in state["flow"].items() if k != "_recent"}
     return jsonify(f)
 
+@app.route("/ping")
+def ping():
+    return jsonify({"t": time.time()})
+
 @app.route("/admin/stats")
 def admin_stats():
-    now = time.time()
-    last = state["_last_trade_ts"]
+    now    = time.time()
+    last   = state["_last_trade_ts"]
     secs_since = round(now - last, 1) if last > 0 else None
     recent = state["flow"]["_recent"]
-    p10 = sum(1 for ts, *_ in recent if now - ts <= 10)
+    feed   = state["ts_feed"]
+
+    # ── Velocidad del tape ──
+    p10  = sum(1 for ts, *_ in recent if now - ts <= 10)
+    p60  = sum(1 for ts, *_ in recent if now - ts <= 60)
+    prev60 = sum(1 for ts, *_ in recent if 60 < now - ts <= 120)
     pps  = round(p10 / 10, 1)
+    if prev60 > 0:
+        tape_chg = round((p60 - prev60) / prev60 * 100)
+        tape_speed = "ACELERANDO" if tape_chg > 20 else "DESACELERANDO" if tape_chg < -20 else "ESTABLE"
+    else:
+        tape_chg, tape_speed = 0, "ESTABLE"
+
+    # ── Flujo ──
     buy  = state["flow"]["buy_vol"]
     sell = state["flow"]["sell_vol"]
     tt   = buy + sell
-    buy_pct  = round(buy / tt * 100, 1) if tt > 0 else 50
+    buy_pct = round(buy / tt * 100, 1) if tt > 0 else 50
+
+    # ── Calidad del flujo (0-100) ──
+    dom_pct      = max(buy, sell) / tt * 100 if tt > 0 else 50
+    consistency  = min(100, (dom_pct - 50) * 4)
+    speed_score  = min(100, p60 / 1.5)
+    block_total  = state["flow"]["block_buy_vol"] + state["flow"]["block_sell_vol"]
+    vol_score    = min(100, block_total / 5000 * 100) if tt > 0 else 0
+    flow_quality = round(consistency * 0.4 + speed_score * 0.35 + vol_score * 0.25)
+
+    # ── Contexto intradía ──
+    market_context = "SIN DATOS"
+    if len(feed) >= 20:
+        prices     = [t["price"] for t in feed[-20:]]
+        fh_avg     = sum(prices[:10]) / 10
+        sh_avg     = sum(prices[10:]) / 10
+        price_rng  = max(prices) - min(prices)
+        price_trend= sh_avg - fh_avg
+        bp_recent  = sum(1 for t in feed[-20:] if t["direction"] == "BUY") / 20 * 100
+        if abs(price_trend) > 0.15 and bp_recent > 58:
+            market_context = "TENDENCIA ALCISTA"
+        elif abs(price_trend) > 0.15 and bp_recent < 42:
+            market_context = "TENDENCIA BAJISTA"
+        elif price_rng < 0.08:
+            market_context = "CONSOLIDACIÓN"
+        else:
+            market_context = "RANGO"
+
+    # ── Detección de absorción ──
+    absorption = "NINGUNA"
+    if len(feed) >= 10:
+        sample = feed[-50:]
+        buy_abs = sell_abs = 0
+        for i in range(len(sample) - 1):
+            tc, tn = sample[i], sample[i + 1]
+            if not tc.get("big"): continue
+            dp = tn["price"] - tc["price"]
+            if tc["direction"] == "BUY"  and dp <= 0: buy_abs  += 1
+            if tc["direction"] == "SELL" and dp >= 0: sell_abs += 1
+        if buy_abs >= 2 and buy_abs > sell_abs:
+            absorption = f"COMPRAS ABSORBIDAS ({buy_abs} bloques)"
+        elif sell_abs >= 2 and sell_abs > buy_abs:
+            absorption = f"VENTAS ABSORBIDAS ({sell_abs} bloques)"
+
+    # ── Cambio de control ──
+    control_change = "NEUTRAL"
+    if len(feed) >= 20:
+        fh = feed[-20:-10]
+        sh = feed[-10:]
+        fh_bp = sum(1 for t in fh if t["direction"] == "BUY") / len(fh) * 100
+        sh_bp = sum(1 for t in sh if t["direction"] == "BUY") / len(sh) * 100
+        diff  = sh_bp - fh_bp
+        if   diff >  25: control_change = "CAMBIO → COMPRADORES"
+        elif diff < -25: control_change = "CAMBIO → VENDEDORES"
+
+    # ── Estado de señal ──
+    if flow_quality >= 65 and absorption != "NINGUNA":
+        signal_state = "LISTO"
+    elif flow_quality >= 35 and market_context != "SIN DATOS":
+        signal_state = "ESPERANDO"
+    else:
+        signal_state = "DESCARTANDO"
+
     claude_since = round(now - state["_claude_last_ts"]) if state["_claude_last_ts"] > 0 else None
+
     return jsonify({
-        "ws_connected":       state["connected"],
-        "mode":               state["mode"],
-        "secs_since_trade":   secs_since,
-        "prints_per_sec":     pps,
-        "total_prints":       len(state["ts_feed"]),
-        "reconnect_count":    state["_reconnect_count"],
-        "buy_pct":            buy_pct,
-        "sell_pct":           round(100 - buy_pct, 1),
-        "buy_vol":            buy,
-        "sell_vol":           sell,
-        "delta":              state["flow"]["delta"],
-        "block_buy_vol":      state["flow"]["block_buy_vol"],
-        "block_sell_vol":     state["flow"]["block_sell_vol"],
-        "claude_status":      state["_claude_status"],
-        "claude_zone":        state["_claude_zone"],
-        "claude_secs_since":  claude_since,
-        "spy_price":          state["spy_price"],
-        "spy_bid":            state["spy_bid"],
-        "spy_ask":            state["spy_ask"],
-        "et_time":            get_et_now().strftime("%H:%M:%S"),
-        "last_block":         state["flow"]["last_block"],
+        "ws_connected":     state["connected"],
+        "mode":             state["mode"],
+        "secs_since_trade": secs_since,
+        "prints_per_sec":   pps,
+        "total_prints":     len(feed),
+        "reconnect_count":  state["_reconnect_count"],
+        "buy_pct":          buy_pct,
+        "sell_pct":         round(100 - buy_pct, 1),
+        "buy_vol":          buy,
+        "sell_vol":         sell,
+        "delta":            state["flow"]["delta"],
+        "block_buy_vol":    state["flow"]["block_buy_vol"],
+        "block_sell_vol":   state["flow"]["block_sell_vol"],
+        "tape_speed":       tape_speed,
+        "tape_change_pct":  tape_chg,
+        "flow_quality":     flow_quality,
+        "market_context":   market_context,
+        "absorption":       absorption,
+        "control_change":   control_change,
+        "signal_state":     signal_state,
+        "claude_status":    state["_claude_status"],
+        "claude_zone":      state["_claude_zone"],
+        "claude_secs_since":claude_since,
+        "spy_price":        state["spy_price"],
+        "spy_bid":          state["spy_bid"],
+        "spy_ask":          state["spy_ask"],
+        "et_time":          get_et_now().strftime("%H:%M:%S"),
+        "last_block":       state["flow"]["last_block"],
     })
 
 @app.route("/oi_levels")

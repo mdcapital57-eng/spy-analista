@@ -124,6 +124,20 @@
           <div class="adm-row"><span class="adm-label">Vol bloques BUY</span><span id="adm-bbuy" class="adm-val">—</span></div>
           <div class="adm-row"><span class="adm-label">Vol bloques SELL</span><span id="adm-bsell" class="adm-val">—</span></div>
         </div>
+        <!-- MICROESTRUCTURA -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">MICROESTRUCTURA</p>
+          <div class="adm-row"><span class="adm-label">Latencia</span><span id="adm-lat" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Velocidad tape</span><span id="adm-tape" class="adm-val">—</span></div>
+          <div class="adm-row" style="margin-top:4px;"><span class="adm-label">Calidad flujo</span><span id="adm-fq-val" class="adm-val">—</span></div>
+          <div class="adm-bar" style="margin-bottom:8px;"><div id="adm-fq-bar" class="adm-bar-fill" style="background:#6366f1;width:0%"></div></div>
+          <div class="adm-row"><span class="adm-label">Contexto</span><span id="adm-ctx" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Absorción</span><span id="adm-abs" class="adm-val" style="font-size:11px;max-width:240px;text-align:right;">—</span></div>
+          <div class="adm-row"><span class="adm-label">Control</span><span id="adm-ctrl" class="adm-val">—</span></div>
+          <div class="adm-row" style="margin-top:8px;padding-top:8px;border-top:1px solid #111827;">
+            <span class="adm-label">Estado señal</span><span id="adm-sig" class="adm-val" style="font-size:14px;">—</span>
+          </div>
+        </div>
         <!-- CLAUDE -->
         <div class="adm-section">
           <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">MOTOR IA — CLAUDE</p>
@@ -829,8 +843,10 @@ function startAdminRefresh() {
 }
 async function fetchAdminStats() {
   try {
+    const t0 = performance.now();
     const r = await fetch(`${API}/admin/stats`, {signal:AbortSignal.timeout(2000)});
     const d = await r.json();
+    const latMs = Math.round(performance.now() - t0);
     updateFeedDot(d.secs_since_trade);
     // Conexión
     const wsEl = document.getElementById('adm-ws');
@@ -857,6 +873,45 @@ async function fetchAdminStats() {
     dEl.style.color = delta>=0?'#22c55e':'#ef4444';
     document.getElementById('adm-bbuy').textContent = (d.block_buy_vol||0).toLocaleString();
     document.getElementById('adm-bsell').textContent = (d.block_sell_vol||0).toLocaleString();
+    // Microestructura — latencia
+    const latEl = document.getElementById('adm-lat');
+    latEl.textContent = `${latMs}ms`;
+    latEl.style.color = latMs < 150 ? '#22c55e' : latMs < 400 ? '#f59e0b' : '#ef4444';
+
+    // Velocidad del tape
+    const tapeEl = document.getElementById('adm-tape');
+    const tc = d.tape_change_pct || 0;
+    tapeEl.textContent = `${d.tape_speed||'—'} (${tc>=0?'+':''}${tc}%)`;
+    tapeEl.style.color = d.tape_speed==='ACELERANDO' ? '#22c55e' : d.tape_speed==='DESACELERANDO' ? '#ef4444' : '#f59e0b';
+
+    // Calidad del flujo
+    const fq = d.flow_quality || 0;
+    document.getElementById('adm-fq-val').textContent = `${fq}/100`;
+    document.getElementById('adm-fq-val').style.color = fq>=65?'#22c55e':fq>=35?'#f59e0b':'#ef4444';
+    document.getElementById('adm-fq-bar').style.width = fq+'%';
+    document.getElementById('adm-fq-bar').style.background = fq>=65?'#22c55e':fq>=35?'#f59e0b':'#ef4444';
+
+    // Contexto
+    const ctxEl = document.getElementById('adm-ctx');
+    ctxEl.textContent = d.market_context || '—';
+    ctxEl.style.color = (d.market_context||'').includes('ALCISTA')?'#22c55e':(d.market_context||'').includes('BAJISTA')?'#ef4444':'#f59e0b';
+
+    // Absorción
+    const absEl = document.getElementById('adm-abs');
+    absEl.textContent = d.absorption || 'NINGUNA';
+    absEl.style.color = d.absorption==='NINGUNA' ? '#6b7280' : '#a855f7';
+
+    // Cambio de control
+    const ctrlEl = document.getElementById('adm-ctrl');
+    ctrlEl.textContent = d.control_change || 'NEUTRAL';
+    ctrlEl.style.color = (d.control_change||'').includes('COMPRADORES')?'#22c55e':(d.control_change||'').includes('VENDEDORES')?'#ef4444':'#6b7280';
+
+    // Estado señal
+    const sigEl = document.getElementById('adm-sig');
+    if (d.signal_state==='LISTO')          { sigEl.textContent='● LISTO';       sigEl.style.color='#22c55e'; }
+    else if (d.signal_state==='ESPERANDO') { sigEl.textContent='◐ ESPERANDO';   sigEl.style.color='#f59e0b'; }
+    else                                   { sigEl.textContent='○ DESCARTANDO'; sigEl.style.color='#ef4444'; }
+
     // Claude
     const st = d.claude_status||'idle';
     const aiEl = document.getElementById('adm-ai');
