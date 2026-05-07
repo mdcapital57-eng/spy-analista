@@ -36,6 +36,20 @@
   body.mobile-mode #mobileTabBar { display:flex!important; }
   #mobileTabBar { display:none; }
   .tab-btn.tab-active { border-color:#ffffff!important; color:#ffffff!important; }
+  /* Admin panel */
+  #adminOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:999; backdrop-filter:blur(8px); }
+  #adminPanel { background:#08080f; border:1px solid #1f2937; border-radius:16px; width:100%; max-width:520px; max-height:90vh; overflow-y:auto; }
+  #adminPanel::-webkit-scrollbar { width:4px; }
+  #adminPanel::-webkit-scrollbar-thumb { background:#1e1e1e; border-radius:2px; }
+  .adm-section { border-bottom:1px solid #111827; padding:16px; }
+  .adm-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0; }
+  .adm-label { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; }
+  .adm-val { font-size:13px; font-weight:700; color:#f1f5f9; }
+  .adm-bar { height:6px; border-radius:3px; background:#1f2937; overflow:hidden; margin-top:6px; }
+  .adm-bar-fill { height:100%; border-radius:3px; transition:width .5s; }
+  @keyframes pulseRed { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .dot-warn  { background:#f59e0b!important; animation:none!important; }
+  .dot-error { background:#ef4444!important; animation:pulseRed .6s ease-in-out infinite!important; }
 </style>
 </head>
 <body class="min-h-screen text-white" style="background: linear-gradient(135deg, #000000 0%, #050508 50%, #0a0a12 100%);">
@@ -59,8 +73,67 @@
       <div id="dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse-slow"></div>
       <span id="clock" class="text-xs text-white tabular-nums">—</span>
       <button id="btnMobile" onclick="toggleMobile()" class="text-xs px-2 py-1 rounded border border-gray-800 text-white hover:border-gray-600 hover:text-white transition-colors">Móvil</button>
+      <button onclick="openAdmin()" style="opacity:.25;font-size:14px;background:none;border:none;cursor:pointer;color:#fff;padding:2px 4px;" title="Admin">⚙</button>
     </div>
   </header>
+
+  <!-- ADMIN PASSWORD MODAL -->
+  <div id="adminOverlay" onclick="if(event.target===this)closeAdmin()">
+    <div style="display:flex;align-items:center;justify-content:center;height:100%;">
+      <!-- PASSWORD PROMPT -->
+      <div id="adminAuth" class="adm-section" style="background:#08080f;border:1px solid #1f2937;border-radius:16px;padding:32px;width:320px;">
+        <p style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:16px;text-align:center;">🔒 Panel Administrador</p>
+        <input id="adminPwInput" type="password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')checkAdminPw()"
+          style="width:100%;background:#0f0f1a;border:1px solid #374151;border-radius:8px;padding:10px 12px;color:#fff;font-size:13px;outline:none;margin-bottom:10px;">
+        <button onclick="checkAdminPw()" style="width:100%;background:#1d4ed8;border:none;border-radius:8px;padding:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Entrar</button>
+        <p id="adminPwErr" style="color:#ef4444;font-size:11px;text-align:center;margin-top:8px;display:none;">Contraseña incorrecta</p>
+      </div>
+      <!-- PANEL -->
+      <div id="adminPanel" style="display:none;">
+        <div class="adm-section" style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:13px;font-weight:800;color:#f1f5f9;letter-spacing:.05em;">PANEL ADMIN</span>
+          <button onclick="closeAdmin()" style="background:none;border:none;color:#6b7280;font-size:18px;cursor:pointer;">✕</button>
+        </div>
+        <!-- CONEXIÓN -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">CONEXIÓN</p>
+          <div class="adm-row"><span class="adm-label">WebSocket</span><span id="adm-ws" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Modo</span><span id="adm-mode" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Reconexiones</span><span id="adm-recon" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Hora ET</span><span id="adm-time" class="adm-val">—</span></div>
+        </div>
+        <!-- FEED -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">FEED DE DATOS</p>
+          <div class="adm-row"><span class="adm-label">Último trade</span><span id="adm-last" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Prints/seg</span><span id="adm-pps" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Total sesión</span><span id="adm-total" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Último bloque</span><span id="adm-block" class="adm-val" style="font-size:11px;max-width:260px;text-align:right;">—</span></div>
+        </div>
+        <!-- FLUJO -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">FLUJO</p>
+          <div class="adm-row"><span class="adm-label">Precio</span><span id="adm-price" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Bid / Ask</span><span id="adm-ba" class="adm-val">—</span></div>
+          <div class="adm-row" style="margin-top:6px;">
+            <span class="adm-label" style="color:#22c55e;">BUY <span id="adm-buypct">—</span>%</span>
+            <span class="adm-label" style="color:#ef4444;">SELL <span id="adm-sellpct">—</span>%</span>
+          </div>
+          <div class="adm-bar"><div id="adm-buybar" class="adm-bar-fill" style="background:#22c55e;width:50%"></div></div>
+          <div class="adm-row" style="margin-top:6px;"><span class="adm-label">Delta</span><span id="adm-delta" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Vol bloques BUY</span><span id="adm-bbuy" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Vol bloques SELL</span><span id="adm-bsell" class="adm-val">—</span></div>
+        </div>
+        <!-- CLAUDE -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">MOTOR IA — CLAUDE</p>
+          <div class="adm-row"><span class="adm-label">Estado</span><span id="adm-ai" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Zona activa</span><span id="adm-zone" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Último análisis</span><span id="adm-ailast" class="adm-val">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- BANNERS -->
   <div id="offlineBanner" class="hidden items-center justify-center gap-2 px-6 py-2 text-xs text-red-500 border-b border-red-900/40" style="background:#0f0505;">
@@ -705,6 +778,104 @@ function setTab(tab){
   document.getElementById('tab-'+tab)?.classList.add('tab-active');
 }
 if(mobileMode)applyMobileMode();
+
+// ── FEED HEALTH DOT ──
+let lastTradeTs = 0;
+function updateFeedDot(secsAgo) {
+  const dot = document.getElementById('dot');
+  if (!dot) return;
+  if (secsAgo === null || secsAgo > 30) {
+    dot.className='w-2 h-2 rounded-full dot-error';
+  } else if (secsAgo > 10) {
+    dot.className='w-2 h-2 rounded-full dot-warn';
+  } else {
+    dot.className='w-2 h-2 rounded-full bg-green-500 animate-pulse-slow';
+  }
+}
+
+// ── ADMIN PANEL ──
+const ADMIN_PW = 'spy2025';
+let adminOpen = false, adminAuthed = false, adminTimer = null;
+
+function openAdmin() {
+  document.getElementById('adminOverlay').style.display='block';
+  document.getElementById('adminAuth').style.display = adminAuthed ? 'none' : 'block';
+  document.getElementById('adminPanel').style.display = adminAuthed ? 'block' : 'none';
+  if (adminAuthed) startAdminRefresh();
+  else setTimeout(()=>document.getElementById('adminPwInput')?.focus(),100);
+}
+function closeAdmin() {
+  document.getElementById('adminOverlay').style.display='none';
+  clearInterval(adminTimer);
+}
+function checkAdminPw() {
+  const v = document.getElementById('adminPwInput').value;
+  if (v === ADMIN_PW) {
+    adminAuthed = true;
+    document.getElementById('adminAuth').style.display='none';
+    document.getElementById('adminPanel').style.display='block';
+    document.getElementById('adminPwInput').value='';
+    document.getElementById('adminPwErr').style.display='none';
+    startAdminRefresh();
+  } else {
+    document.getElementById('adminPwErr').style.display='block';
+    document.getElementById('adminPwInput').value='';
+  }
+}
+function startAdminRefresh() {
+  clearInterval(adminTimer);
+  fetchAdminStats();
+  adminTimer = setInterval(fetchAdminStats, 1000);
+}
+async function fetchAdminStats() {
+  try {
+    const r = await fetch(`${API}/admin/stats`, {signal:AbortSignal.timeout(2000)});
+    const d = await r.json();
+    updateFeedDot(d.secs_since_trade);
+    // Conexión
+    const wsEl = document.getElementById('adm-ws');
+    wsEl.textContent = d.ws_connected ? '● CONECTADO' : '○ DESCONECTADO';
+    wsEl.style.color = d.ws_connected ? '#22c55e' : '#ef4444';
+    document.getElementById('adm-mode').textContent = (d.mode||'—').toUpperCase();
+    document.getElementById('adm-recon').textContent = d.reconnect_count ?? '0';
+    document.getElementById('adm-time').textContent = d.et_time || '—';
+    // Feed
+    const secs = d.secs_since_trade;
+    document.getElementById('adm-last').textContent = secs===null ? 'Sin datos' : secs < 60 ? `hace ${secs}s` : `hace ${Math.floor(secs/60)}m ${secs%60}s`;
+    document.getElementById('adm-pps').textContent = d.prints_per_sec ?? '0';
+    document.getElementById('adm-total').textContent = (d.total_prints||0).toLocaleString();
+    document.getElementById('adm-block').textContent = d.last_block || '—';
+    // Flujo
+    document.getElementById('adm-price').textContent = d.spy_price ? `$${d.spy_price.toFixed(2)}` : '—';
+    document.getElementById('adm-ba').textContent = d.spy_bid&&d.spy_ask ? `$${d.spy_bid.toFixed(2)} / $${d.spy_ask.toFixed(2)}` : '—';
+    document.getElementById('adm-buypct').textContent = d.buy_pct ?? 50;
+    document.getElementById('adm-sellpct').textContent = d.sell_pct ?? 50;
+    document.getElementById('adm-buybar').style.width = (d.buy_pct||50)+'%';
+    const delta = d.delta||0;
+    const dEl = document.getElementById('adm-delta');
+    dEl.textContent = (delta>=0?'+':'')+delta.toLocaleString();
+    dEl.style.color = delta>=0?'#22c55e':'#ef4444';
+    document.getElementById('adm-bbuy').textContent = (d.block_buy_vol||0).toLocaleString();
+    document.getElementById('adm-bsell').textContent = (d.block_sell_vol||0).toLocaleString();
+    // Claude
+    const st = d.claude_status||'idle';
+    const aiEl = document.getElementById('adm-ai');
+    if (st==='analyzing') { aiEl.textContent='⚡ ANALIZANDO'; aiEl.style.color='#f59e0b'; }
+    else { aiEl.textContent='● EN ESPERA'; aiEl.style.color='#6b7280'; }
+    document.getElementById('adm-zone').textContent = d.claude_zone || '—';
+    const cs = d.claude_secs_since;
+    document.getElementById('adm-ailast').textContent = cs===null ? 'Sin análisis' : cs<60 ? `hace ${cs}s` : `hace ${Math.floor(cs/60)}m`;
+  } catch {}
+}
+// Actualizar dot aunque el panel esté cerrado
+setInterval(async()=>{
+  if(adminOpen) return;
+  try {
+    const r=await fetch(`${API}/admin/stats`,{signal:AbortSignal.timeout(1500)});
+    const d=await r.json();
+    updateFeedDot(d.secs_since_trade);
+  } catch {}
+}, 5000);
 </script>
 </body>
 </html>

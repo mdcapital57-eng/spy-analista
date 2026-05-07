@@ -149,6 +149,11 @@ state = {
     "mode":       "iniciando",
     "_flow_reset_date": None,
     "pcr": {"ratio": None, "calls": None, "puts": None, "date": None},
+    "_last_trade_ts":   0.0,
+    "_reconnect_count": 0,
+    "_claude_status":   "idle",
+    "_claude_zone":     "",
+    "_claude_last_ts":  0.0,
 }
 
 MAX_TS = 300
@@ -280,6 +285,43 @@ def flow():
     f = {k: v for k, v in state["flow"].items() if k != "_recent"}
     return jsonify(f)
 
+@app.route("/admin/stats")
+def admin_stats():
+    now = time.time()
+    last = state["_last_trade_ts"]
+    secs_since = round(now - last, 1) if last > 0 else None
+    recent = state["flow"]["_recent"]
+    p10 = sum(1 for ts, *_ in recent if now - ts <= 10)
+    pps  = round(p10 / 10, 1)
+    buy  = state["flow"]["buy_vol"]
+    sell = state["flow"]["sell_vol"]
+    tt   = buy + sell
+    buy_pct  = round(buy / tt * 100, 1) if tt > 0 else 50
+    claude_since = round(now - state["_claude_last_ts"]) if state["_claude_last_ts"] > 0 else None
+    return jsonify({
+        "ws_connected":       state["connected"],
+        "mode":               state["mode"],
+        "secs_since_trade":   secs_since,
+        "prints_per_sec":     pps,
+        "total_prints":       len(state["ts_feed"]),
+        "reconnect_count":    state["_reconnect_count"],
+        "buy_pct":            buy_pct,
+        "sell_pct":           round(100 - buy_pct, 1),
+        "buy_vol":            buy,
+        "sell_vol":           sell,
+        "delta":              state["flow"]["delta"],
+        "block_buy_vol":      state["flow"]["block_buy_vol"],
+        "block_sell_vol":     state["flow"]["block_sell_vol"],
+        "claude_status":      state["_claude_status"],
+        "claude_zone":        state["_claude_zone"],
+        "claude_secs_since":  claude_since,
+        "spy_price":          state["spy_price"],
+        "spy_bid":            state["spy_bid"],
+        "spy_ask":            state["spy_ask"],
+        "et_time":            get_et_now().strftime("%H:%M:%S"),
+        "last_block":         state["flow"]["last_block"],
+    })
+
 @app.route("/oi_levels")
 def oi_levels():
     return jsonify(state["oi_levels"])
@@ -365,6 +407,8 @@ def analyze():
     data = request.get_json() or {}
     if not CLAUDE_API_KEY:
         return jsonify({"error": "sin_key"}), 500
+    state["_claude_status"] = "analyzing"
+    state["_claude_zone"]   = data.get("lvl_tag", "")
 
     lvl_tag   = data.get("lvl_tag", "")
     lvl_price = data.get("lvl_price", 0)
@@ -559,8 +603,11 @@ def analyze():
             },
             timeout=15
         )
+        state["_claude_status"]  = "idle"
+        state["_claude_last_ts"] = time.time()
         return jsonify(res.json()), res.status_code
     except Exception as e:
+        state["_claude_status"] = "idle"
         return jsonify({"error": str(e)}), 500
 
 
@@ -933,7 +980,8 @@ def process_schwab_trade(content):
         state["ts_feed"].append(entry)
         if len(state["ts_feed"]) > 10000:
             state["ts_feed"] = state["ts_feed"][-10000:]
-        state["spy_price"] = p
+        state["spy_price"]        = p
+        state["_last_trade_ts"]   = time.time()
 
         w = block_weight(s) * s
         now_ts = time.time()
@@ -1065,6 +1113,7 @@ async def schwab_stream():
                         print(f"  Schwab parse error: {e}")
 
         except Exception as e:
+            state["_reconnect_count"] += 1
             print(f"  Schwab WS error: {e} — reintentando en 15s")
             state["connected"] = False
             state["mode"]      = "reconectando"
