@@ -1145,13 +1145,9 @@ function setChartInterval(iv) {
   if (lcChart) { applyBars(); lcChart.timeScale().fitContent(); }
 }
 
-// Redraw levels when LEVELS update and chart is open
-const _origRenderLevels = renderLevels;
-function renderLevels() { _origRenderLevels(); if (chartOpen && lcChart) drawLevels(); }
-
-// Update current candle on each price poll
-const _origPoll = poll;
-async function poll() { await _origPoll(); if (chartOpen && lcChart) updateCurrentCandle(); }
+// Update chart when open — runs alongside the main poll
+setInterval(() => { if (chartOpen && lcChart) updateCurrentCandle(); }, 2000);
+setInterval(() => { if (chartOpen && lcChart) drawLevels(); }, 30000);
 
 // Actualizar dot aunque el panel esté cerrado
 setInterval(async()=>{
