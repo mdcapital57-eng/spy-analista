@@ -159,6 +159,7 @@ state = {
     "_claude_level_price":0.0,
     "_claude_level_desc": "",
     "_auto_cooldowns":    {},
+    "_market_regime":     {"type": "INDEFINIDO", "confidence": 0, "desc": "Iniciando", "color": "#6b7280"},
 }
 
 MAX_TS = 300
@@ -435,6 +436,8 @@ def admin_stats():
         "claude_auto":        state["_claude_auto"],
         "claude_level_price": state["_claude_level_price"],
         "claude_last_ts":     state["_claude_last_ts"],
+        "regime":             state["_market_regime"],
+        "regime_params":      REGIME_PARAMS.get(state["_market_regime"].get("type","INDEFINIDO"), REGIME_PARAMS["INDEFINIDO"]),
         "spy_price":          state["spy_price"],
         "spy_bid":          state["spy_bid"],
         "spy_ask":          state["spy_ask"],
@@ -753,11 +756,113 @@ def calc_flow_quality():
     return round(consistency * 0.4 + speed_score * 0.35 + vol_score * 0.25)
 
 
+# Parámetros de análisis por régimen
+REGIME_PARAMS = {
+    "TREND DAY":    {"fq_min": 52, "zone_dist": 0.08},
+    "RANGE DAY":    {"fq_min": 60, "zone_dist": 0.14},
+    "CHOPPY DAY":   {"fq_min": 78, "zone_dist": 0.18},
+    "REVERSAL DAY": {"fq_min": 62, "zone_dist": 0.10},
+    "NEWS DAY":     {"fq_min": 68, "zone_dist": 0.08},
+    "INDEFINIDO":   {"fq_min": 65, "zone_dist": 0.10},
+}
+
+def detect_regime():
+    """Detecta el tipo de día basado en precio, flujo y tape."""
+    feed       = state["ts_feed"]
+    price_now  = state["spy_price"]
+    open_price = state["spy_open"]
+    prev_close = state["spy_prev_close"]
+
+    if len(feed) < 20 or not price_now or not open_price:
+        return {"type": "INDEFINIDO", "confidence": 0, "desc": "Datos insuficientes", "color": "#6b7280"}
+
+    # ── Métricas base ──
+    recent_prices = [t["price"] for t in feed[-120:]]
+    price_range   = max(recent_prices) - min(recent_prices)
+    range_pct     = price_range / price_now * 100
+
+    move_from_open = price_now - open_price
+    move_pct       = abs(move_from_open) / open_price * 100
+
+    buy  = state["flow"]["buy_vol"]
+    sell = state["flow"]["sell_vol"]
+    total = buy + sell
+    buy_pct = buy / total * 100 if total > 0 else 50
+
+    # Tape speed (prints último minuto)
+    now    = time.time()
+    recent = state["flow"]["_recent"]
+    p60    = sum(1 for ts, *_ in recent if now - ts <= 60)
+
+    # Reversiones de dirección en últimos 60 trades
+    direction_flips = sum(
+        1 for i in range(1, min(len(feed), 60))
+        if feed[-i].get("direction") != feed[-i-1].get("direction")
+    )
+    chop_ratio = direction_flips / 59 if len(feed) >= 60 else 0
+
+    # Gap desde prev close
+    gap_pct = abs(open_price - prev_close) / prev_close * 100 if prev_close else 0
+
+    # Reversión: precio subió pero flujo vende (o viceversa)
+    price_up = move_from_open > 0
+    flow_bullish = buy_pct > 55
+
+    # ── Clasificación ──
+    if gap_pct > 1.0 or p60 > 180:
+        return {
+            "type": "NEWS DAY", "confidence": 88,
+            "desc": f"Gap {gap_pct:.1f}% — tape {p60} prints/min",
+            "color": "#a855f7"
+        }
+    if move_pct > 0.55 and (buy_pct > 62 or buy_pct < 38):
+        direccion = "alcista" if buy_pct > 62 else "bajista"
+        return {
+            "type": "TREND DAY", "confidence": min(95, int(60 + move_pct * 20)),
+            "desc": f"Tendencia {direccion} {move_pct:.2f}% desde apertura",
+            "color": "#22c55e" if buy_pct > 62 else "#ef4444"
+        }
+    if move_pct > 0.35 and price_up != flow_bullish:
+        return {
+            "type": "REVERSAL DAY", "confidence": 72,
+            "desc": "Precio y flujo en direcciones opuestas — posible reversión",
+            "color": "#f97316"
+        }
+    if chop_ratio > 0.52 and move_pct < 0.25:
+        return {
+            "type": "CHOPPY DAY", "confidence": int(55 + chop_ratio * 30),
+            "desc": f"Alta reversión ({int(chop_ratio*100)}% flips), sin dirección",
+            "color": "#ef4444"
+        }
+    if range_pct < 0.28 and move_pct < 0.28:
+        return {
+            "type": "RANGE DAY", "confidence": 70,
+            "desc": f"Rango de ${price_range:.2f} ({range_pct:.2f}%)",
+            "color": "#f59e0b"
+        }
+    return {
+        "type": "INDEFINIDO", "confidence": 35,
+        "desc": "Sin carácter definido todavía",
+        "color": "#6b7280"
+    }
+
+def regime_watcher():
+    """Actualiza el régimen de mercado cada 30 segundos."""
+    while True:
+        try:
+            state["_market_regime"] = detect_regime()
+        except Exception as e:
+            print(f"  Regime error: {e}")
+        time.sleep(30)
+
+
 def check_auto_analyze():
     price = state["spy_price"]
     if not price or state["_claude_status"] == "analyzing":
         return
-    if calc_flow_quality() < 65:
+    regime = state["_market_regime"].get("type", "INDEFINIDO")
+    params = REGIME_PARAMS.get(regime, REGIME_PARAMS["INDEFINIDO"])
+    if calc_flow_quality() < params["fq_min"]:
         return
     levels = [
         ("pdh", "PREV HIGH", "High día anterior", state["spy_prev_high"]),
@@ -768,7 +873,7 @@ def check_auto_analyze():
     for oi in state["oi_levels"]:
         levels.append((oi["id"], oi["tag"], oi["desc"], oi["price"]))
     nearest = None
-    nearest_dist = 0.11
+    nearest_dist = params["zone_dist"] + 0.001
     for lid, ltag, ldesc, lprice in levels:
         if lprice <= 0:
             continue
@@ -1475,6 +1580,7 @@ if __name__ == "__main__":
     threading.Thread(target=fetch_pcr,         daemon=True).start()
     threading.Thread(target=flow_reset_watcher, daemon=True).start()
     threading.Thread(target=flow_decay_watcher, daemon=True).start()
+    threading.Thread(target=regime_watcher,    daemon=True).start()
 
     if schwab_tokens["access_token"] or schwab_tokens["refresh_token"]:
         print("✓ Schwab configurado — SIP feed (100% del mercado)")

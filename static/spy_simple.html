@@ -146,6 +146,15 @@
           <div class="adm-row"><span class="adm-label">Vol bloques BUY</span><span id="adm-bbuy" class="adm-val">—</span></div>
           <div class="adm-row"><span class="adm-label">Vol bloques SELL</span><span id="adm-bsell" class="adm-val">—</span></div>
         </div>
+        <!-- RÉGIMEN -->
+        <div class="adm-section">
+          <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">RÉGIMEN DE MERCADO</p>
+          <div class="adm-row"><span class="adm-label">Tipo</span><span id="adm-regime" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Confianza</span><span id="adm-regime-conf" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Descripción</span><span id="adm-regime-desc" class="adm-val" style="font-size:11px;max-width:260px;text-align:right;">—</span></div>
+          <div class="adm-row"><span class="adm-label">FQ mínimo</span><span id="adm-regime-fq" class="adm-val">—</span></div>
+          <div class="adm-row"><span class="adm-label">Dist. zona</span><span id="adm-regime-dist" class="adm-val">—</span></div>
+        </div>
         <!-- MICROESTRUCTURA -->
         <div class="adm-section">
           <p style="font-size:10px;font-weight:700;color:#4b5563;letter-spacing:.1em;margin-bottom:10px;">MICROESTRUCTURA</p>
@@ -305,6 +314,19 @@
           <div class="flex-1 rounded-xl px-4 py-3 flex flex-col gap-1" style="background:#080810;border:1px solid #111827;">
             <p class="text-xs font-bold" style="color:#4b5563;letter-spacing:.06em;">DISTANCIA</p>
             <p id="zsDistVal" class="text-sm font-black text-white">—</p>
+          </div>
+        </div>
+
+        <!-- Régimen de mercado -->
+        <div id="regimeCard" class="rounded-xl px-4 py-3 flex items-center justify-between" style="background:#080810;border:1px solid #111827;">
+          <div>
+            <p class="text-xs font-bold mb-0.5" style="color:#4b5563;letter-spacing:.06em;">RÉGIMEN</p>
+            <p id="regimeType" class="text-sm font-black" style="color:#6b7280;">—</p>
+            <p id="regimeDesc" class="text-xs mt-0.5" style="color:#4b5563;">—</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs font-bold" style="color:#4b5563;">CONFIANZA</p>
+            <p id="regimeConf" class="text-base font-black" style="color:#6b7280;">—</p>
           </div>
         </div>
 
@@ -917,6 +939,23 @@ async function fetchAdminStats() {
     const d = await r.json();
     const latMs = Math.round(performance.now() - t0);
     updateFeedDot(d.secs_since_trade);
+    // Régimen
+    const rg = d.regime || {};
+    const rgEl = document.getElementById('adm-regime');
+    rgEl.textContent = rg.type || '—';
+    rgEl.style.color = rg.color || '#6b7280';
+    document.getElementById('adm-regime-conf').textContent = rg.confidence ? `${rg.confidence}%` : '—';
+    document.getElementById('adm-regime-desc').textContent = rg.desc || '—';
+    const rp = d.regime_params || {};
+    document.getElementById('adm-regime-fq').textContent   = rp.fq_min   ? `≥${rp.fq_min}` : '—';
+    document.getElementById('adm-regime-dist').textContent = rp.zone_dist ? `±$${rp.zone_dist.toFixed(2)}` : '—';
+    // Zone Status regime card
+    const rtEl = document.getElementById('regimeType');
+    const rdEl = document.getElementById('regimeDesc');
+    const rcEl = document.getElementById('regimeConf');
+    if (rtEl) { rtEl.textContent = rg.type || '—'; rtEl.style.color = rg.color || '#6b7280'; }
+    if (rdEl) { rdEl.textContent = rg.desc || '—'; }
+    if (rcEl) { rcEl.textContent = rg.confidence ? `${rg.confidence}%` : '—'; rcEl.style.color = rg.color || '#6b7280'; }
     // Conexión
     const wsEl = document.getElementById('adm-ws');
     wsEl.textContent = d.ws_connected ? '● CONECTADO' : '○ DESCONECTADO';
@@ -1156,6 +1195,15 @@ setInterval(async()=>{
     const r=await fetch(`${API}/admin/stats`,{signal:AbortSignal.timeout(1500)});
     const d=await r.json();
     updateFeedDot(d.secs_since_trade);
+    // Actualizar régimen en Zone Status aunque el admin esté cerrado
+    const rg = d.regime || {};
+    const rtEl = document.getElementById('regimeType');
+    const rdEl = document.getElementById('regimeDesc');
+    const rcEl = document.getElementById('regimeConf');
+    if (rtEl) { rtEl.textContent = rg.type || '—'; rtEl.style.color = rg.color || '#6b7280'; }
+    if (rdEl) rdEl.textContent = rg.desc || '—';
+    if (rcEl) { rcEl.textContent = rg.confidence ? `${rg.confidence}%` : '—'; rcEl.style.color = rg.color || '#6b7280'; }
+    if (d.claude_last_ts) handleAutoAnalysis(d);
   } catch {}
 }, 5000);
 </script>
