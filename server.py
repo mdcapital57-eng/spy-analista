@@ -294,6 +294,31 @@ def flow():
 def ping():
     return jsonify({"t": time.time()})
 
+@app.route("/chart/bars")
+def chart_bars():
+    """Velas de 1 minuto de SPY para el chart (hoy + premarket)."""
+    data = schwab_market_get("/pricehistory", {
+        "symbol": "SPY",
+        "periodType": "day",
+        "period": 1,
+        "frequencyType": "minute",
+        "frequency": 1,
+        "needExtendedHoursData": "true"
+    })
+    if not data:
+        return jsonify({"candles": []})
+    candles = []
+    for c in data.get("candles", []):
+        candles.append({
+            "time":   c["datetime"] // 1000,
+            "open":   round(float(c["open"]),   2),
+            "high":   round(float(c["high"]),   2),
+            "low":    round(float(c["low"]),    2),
+            "close":  round(float(c["close"]),  2),
+            "volume": int(c.get("volume", 0))
+        })
+    return jsonify({"candles": candles})
+
 @app.route("/admin/stats")
 def admin_stats():
     now    = time.time()
